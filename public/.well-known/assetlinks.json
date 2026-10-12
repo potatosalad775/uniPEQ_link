@@ -5,7 +5,7 @@
 			"namespace": "android_app",
 			"package_name": "kr.potatosalad775.unipeq",
 			"sha256_cert_fingerprints": [
-				"TODO: Play app-signing key SHA-256 (Play Console → App integrity)"
+        		"84:51:93:C1:79:BA:E3:67:12:AE:B9:5E:BC:B1:92:38:B9:65:81:B4:B4:E1:D5:54:B8:F6:4F:00:32:0D:BD:3F"
 			]
 		}
 	},
@@ -14,7 +14,9 @@
 		"target": {
 			"namespace": "android_app",
 			"package_name": "kr.potatosalad775.unipeq.sideload",
-			"sha256_cert_fingerprints": ["TODO: sideload keystore SHA-256 (keytool -list -v)"]
+			"sha256_cert_fingerprints": [
+				"47:4C:47:FB:7F:24:94:42:02:25:6B:75:06:17:5C:59:3B:89:BD:A9:D0:AD:C2:9E:C2:36:7D:82:B7:48:7D:8A"
+			]
 		}
 	}
 ]
