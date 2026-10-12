@@ -16,8 +16,8 @@ import android.webkit.WebView;
 import java.lang.ref.WeakReference;
 
 /**
- * Phase 0 freeze experiment, debug builds only. Chromium freezes a hidden page about 18 s after
- * uniPEQ goes to the background, foreground service or not. While keepVisible is on, this tells
+ * Phase 0 freeze experiment, debug builds only. Chromium freezes a hidden page 60 s after uniPEQ
+ * goes to the background, foreground service or not. While keepVisible is on, this tells
  * the WebView its window is still visible after the activity stops, so the page never counts as
  * hidden. Public API only (View.dispatchWindowVisibilityChanged).
  *

@@ -40,7 +40,8 @@ const flag = (name) => {
 	return i >= 0 ? args[i + 1] : undefined;
 };
 const server = flag('server')?.replace(/\/+$/, '');
-// The freeze has come anywhere from 18 s to 58 s after going hidden.
+// Chromium freezes the hidden page 60 s after it goes hidden, so 150 s shows the freeze and well
+// after it.
 const seconds = Number(flag('seconds') ?? 150);
 const serial = flag('serial');
 const only = flag('only')?.split(',');

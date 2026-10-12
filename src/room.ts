@@ -13,8 +13,8 @@ interface Peer {
 	id: string;
 	/**
 	 * The Origin header of the peer's WebSocket upgrade. A browser can't fake it, so this is what
-	 * uniPEQ shows as "Link with <origin>?". Other native apps can, which is why pairing also
-	 * needs the secret from the QR code or link.
+	 * uniPEQ shows as "Link with <origin>?". Other native apps can, so it's a label for the
+	 * approval dialog, not proof of who is asking.
 	 */
 	origin: string;
 	userAgent: string;

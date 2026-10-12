@@ -15,7 +15,9 @@ export interface Env {
 
 /**
  * Eight Crockford base32 characters (no I, L, O, U): short enough to type from another device's
- * screen. The room code only finds the room; it isn't the session's secret.
+ * screen. The code is the pairing's only secret, and 40 random bits are enough for one: a room
+ * holds two peers and lives only while one is connected, and uniPEQ asks before it accepts any
+ * EQ command.
  */
 const ROOM_PATH = /^\/api\/rooms\/([0-9A-HJKMNP-TV-Z]{8})$/;
 /** A stable id per tab or app session, so a signaling reconnect isn't seen as a new peer. */

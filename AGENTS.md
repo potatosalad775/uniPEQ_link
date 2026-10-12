@@ -5,8 +5,9 @@ app: `../modernGraphTool`) with **uniPEQ** (Capacitor app, web and Android: `../
 WebRTC DataChannel; this repo's Cloudflare Worker only introduces them. The link is a one-time
 session, like a call: when it ends, both sides forget it.
 
-**Status: Phase 0 done (2026-10-12); next is the design.** The platform checks on a real phone, their
-answers and the design rules they lead to are in [docs/phase-0.md](docs/phase-0.md).
+**Status: design drafted (2026-10-12); next is building it.** The platform checks on a real phone,
+their answers and the design rules they lead to are in [docs/phase-0.md](docs/phase-0.md). Pairing,
+the wire protocol, uniPEQ's link service and mGT's side are in [docs/design.md](docs/design.md).
 
 ## Layout
 
@@ -23,6 +24,7 @@ scripts/
   freeze-matrix.mjs  Q4b: every freeze experiment back to back, results from logcat
   unipeq-debug-overlay.mjs apply|remove the overlay into ../uniPEQ/android/app/src/debug
 docs/phase-0.md      Phase 0: answers, design consequences, findings, how to rerun
+docs/design.md       The link: pairing, wire protocol, uniPEQ link service, mGT side
 results/             Probe logs, local only (gitignored): docs/phase-0.md is the record
 ```
 
@@ -49,8 +51,9 @@ deploy`. Relay credentials: `npx wrangler secret put TURN_KEY_ID` / `TURN_KEY_AP
 - **A close before the WebSocket handshake completes is dropped** (seen in workerd), so a full room
   is answered with `{ type: 'error', code: 'room-full' }` on a plain, non-hibernating socket, and
   the client closes. Sockets without a peer attachment never count as peers (`Room.sockets()`).
-- **The room code alphabet lives in three places**: `ROOM_PATH` in `src/worker.ts`,
-  `ROOM_ALPHABET` in `public/probe.js`, and the join regex in `public/index.html`.
+- **The room code alphabet lives in four places**: `ROOM_PATH` in `src/worker.ts`,
+  `ROOM_ALPHABET` in `public/probe.js`, the join regex in `public/index.html`, and `room()` in
+  `scripts/smoke.mjs`.
 - **`android-debug/` is never committed to uniPEQ.** It goes into uniPEQ's debug source set only
   through `npm run overlay:apply`, which marks the directory so `overlay:remove` can't delete
   anything else.
