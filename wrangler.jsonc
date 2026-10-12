@@ -3,7 +3,11 @@
 	"name": "peq-link",
 	"main": "src/worker.ts",
 	"compatibility_date": "2026-10-01",
-	// The Phase 0 probe page. Matching files are served before the Worker runs.
+	// The unipeq.com zone is on Cloudflare, so deploy creates the DNS record and certificate.
+	// uniPEQ's App Links are verified for this host only (public/.well-known/assetlinks.json).
+	"routes": [{ "pattern": "link.unipeq.com", "custom_domain": true }],
+	// assetlinks.json and the Phase 0 probe (/probe/). Matching files are served before the
+	// Worker runs; everything else (rooms, the /l/<CODE> landing page) reaches it.
 	"assets": { "directory": "./public" },
 	"durable_objects": {
 		"bindings": [{ "name": "ROOMS", "class_name": "Room" }]

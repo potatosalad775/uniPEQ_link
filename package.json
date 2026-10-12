@@ -1,12 +1,20 @@
 {
-	"name": "peq-link-server",
+	"name": "peq-link",
+	"version": "1.0.0",
 	"private": true,
 	"type": "module",
 	"description": "Signaling server and protocol for the modernGraphTool ↔ uniPEQ link",
+	"exports": {
+		"./client": "./client/index.ts"
+	},
+	"files": [
+		"client"
+	],
 	"scripts": {
 		"dev": "wrangler dev",
 		"deploy": "wrangler deploy",
-		"check": "tsc --noEmit && node --check public/probe.js && node --check scripts/android-link-probe.mjs && node --check scripts/unipeq-debug-overlay.mjs && node --check scripts/freeze-matrix.mjs",
+		"check": "tsc --noEmit && tsc -p tsconfig.client.json && node --check public/probe/probe.js && node --check scripts/smoke.mjs && node --check scripts/android-link-probe.mjs && node --check scripts/unipeq-debug-overlay.mjs && node --check scripts/freeze-matrix.mjs",
+		"test": "node --test \"test/*.test.ts\"",
 		"format": "prettier --write .",
 		"lint": "prettier --check .",
 		"test:smoke": "node scripts/smoke.mjs",
@@ -17,12 +25,13 @@
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^5.20261011.1",
+		"esbuild": "^0.28.2",
 		"playwright": "1.63.0",
 		"prettier": "^3.9.10",
 		"typescript": "^6.0.3",
 		"wrangler": "^4.149.0"
 	},
 	"engines": {
-		"node": ">=22"
+		"node": ">=22.18"
 	}
 }

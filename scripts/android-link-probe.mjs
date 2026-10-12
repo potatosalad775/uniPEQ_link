@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Phase 0 driver for uniPEQ's side of the link probe (docs/phase-0.md). Injects public/probe.js
+// Phase 0 driver for uniPEQ's side of the link probe (docs/phase-0.md). Injects public/probe/probe.js
 // into the running debug app's WebView over adb + the Chrome DevTools protocol, the same way
 // uniPEQ's scripts/android-hid-spike.mjs runs its spike, then detaches.
 //
@@ -196,7 +196,7 @@ try {
 
 function injection() {
 	const source = readFileSync(
-		join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'probe.js'),
+		join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'probe', 'probe.js'),
 		'utf8'
 	);
 	const action = room

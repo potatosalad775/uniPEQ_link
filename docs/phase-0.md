@@ -163,7 +163,7 @@ reconnect backoff had grown to 30 s while it was hidden. Because the old socket 
 between, the room announced the return as `peer-joined`. uniPEQ treated that as a fresh session,
 rebuilt its connection and broke a channel that was still working.
 
-Fixed in `public/probe.js`: a `peer-joined` with the peer id already known is a rejoin
+Fixed in `public/probe/probe.js`: a `peer-joined` with the peer id already known is a rejoin
 (`peer-rejoined`, nothing is rebuilt; the rejoining side sends `fresh` only if its own end is dead),
 and signaling retries at once when the page becomes visible or comes back online.
 `npm run test:smoke` cuts one side's signaling while the channel is up and checks the channel
@@ -213,7 +213,7 @@ TURN_KEY_ID` and `TURN_KEY_API_TOKEN`. Without them rooms offer STUN only. The p
 3. uniPEQ debug overlay: `npm run overlay:apply`, then `npm run android` in `../uniPEQ`.
    `npm run overlay:remove` when done; it must never be committed to uniPEQ.
 
-**The probe page** (the Worker's `/`) creates or joins a room and shows a live summary. Each side
+**The probe page** (the Worker's `/probe/`) creates or joins a room and shows a live summary. Each side
 sends a heartbeat every 1 s from a timer (gaps show throttled timers) and a ping every 5 s that the
 other side answers from its message handler (shows whether incoming events still run). In uniPEQ,
 every 10th heartbeat also times a `DeviceIo.list()` round trip. The page logs the ICE pair every

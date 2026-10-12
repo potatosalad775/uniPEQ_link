@@ -5,21 +5,31 @@ app: `../modernGraphTool`) with **uniPEQ** (Capacitor app, web and Android: `../
 WebRTC DataChannel; this repo's Cloudflare Worker only introduces them. The link is a one-time
 session, like a call: when it ends, both sides forget it.
 
-**Status: design drafted (2026-10-12); next is building it.** The platform checks on a real phone,
+**Status (2026-10-12): building.** This repo's part (`client/`, landing page, assetlinks) is in;
+next are uniPEQ's native service and app glue (design §9). The platform checks on a real phone,
 their answers and the design rules they lead to are in [docs/phase-0.md](docs/phase-0.md). Pairing,
 the wire protocol, uniPEQ's link service and mGT's side are in [docs/design.md](docs/design.md).
 
 ## Layout
 
 ```
-src/worker.ts        Routes /api/rooms/<code>?peer=<uuid> (WebSocket) to the room's Durable Object
+client/              The reference client both apps install (`peq-link/client`): protocol, session,
+                     sync, liveness, host (mGT), joiner (uniPEQ). TypeScript source, no deps
+test/                Unit tests for client/ (`npm test`)
+src/worker.ts        Routes /api/rooms/<code>?peer=<uuid> (WebSocket) to the room's Durable Object,
+                     and /l/<code> to the landing page
+src/landing.ts       The landing page: QR target and the intent link's fallback
 src/room.ts          Room: ≤ 2 peers, relays `signal` messages, attests Origin, issues ICE servers
-public/              Phase 0 probe page (served as static assets by the same Worker)
-  probe.js           The probe itself. Plain JS, no imports: also injected into uniPEQ's WebView
+public/              Static assets, served before the Worker runs
+  .well-known/assetlinks.json   App Link verification for both uniPEQ packages
+  probe/             Phase 0 probe page at /probe/
+    probe.js         The probe itself. Plain JS, no imports: also injected into uniPEQ's WebView
 android-debug/       uniPEQ debug-only overlay: foreground service, unipeq://link deep link,
                      LinkProbeVisibility (keeps the WebView "visible" for the freeze experiment)
 scripts/
-  smoke.mjs          Signaling rules + a real DataChannel between two headless Chromium pages
+  smoke.mjs          Signaling rules, static routes, a real DataChannel, and the protocol run:
+                     the client as mGT and as uniPEQ with a fake device, in headless Chromium
+  smoke-page.js      The in-page harness for the protocol run
   android-link-probe.mjs   adb + DevTools driver for uniPEQ's side (like uniPEQ's hid-spike)
   freeze-matrix.mjs  Q4b: every freeze experiment back to back, results from logcat
   unipeq-debug-overlay.mjs apply|remove the overlay into ../uniPEQ/android/app/src/debug
@@ -30,7 +40,7 @@ results/             Probe logs, local only (gitignored): docs/phase-0.md is the
 
 ## Commands
 
-`npm run dev` (wrangler on :8787) · `npm run test:smoke` (needs `dev` running, or `-- --server
+`npm run dev` (wrangler on :8787) · `npm test` (unit) · `npm run test:smoke` (needs `dev` running, or `-- --server
 <url>`) · `npm run check` (tsc + syntax checks) · `npm run format` / `npm run lint` · `npm run
 deploy`. Relay credentials: `npx wrangler secret put TURN_KEY_ID` / `TURN_KEY_API_TOKEN`
 (Cloudflare Realtime TURN). Without them rooms offer STUN only.
@@ -51,9 +61,14 @@ deploy`. Relay credentials: `npx wrangler secret put TURN_KEY_ID` / `TURN_KEY_AP
 - **A close before the WebSocket handshake completes is dropped** (seen in workerd), so a full room
   is answered with `{ type: 'error', code: 'room-full' }` on a plain, non-hibernating socket, and
   the client closes. Sockets without a peer attachment never count as peers (`Room.sockets()`).
-- **The room code alphabet lives in four places**: `ROOM_PATH` in `src/worker.ts`,
-  `ROOM_ALPHABET` in `public/probe.js`, the join regex in `public/index.html`, and `room()` in
-  `scripts/smoke.mjs`.
+- **The room code alphabet lives in three places**: `client/protocol.ts` (which the Worker and
+  the smoke test import), `ROOM_ALPHABET` in `public/probe/probe.js` and the join regex in
+  `public/probe/index.html`.
+- **`client/` compiles under both apps' settings**: strict, DOM lib, no Node types, `.ts`
+  imports, erasable syntax only (no enums, no constructor parameter properties), checked by
+  `tsconfig.client.json`. It ships as source, so no build step and no dependencies.
+- **A change to `client/` gets a version bump and a `vX.Y.Z` tag**; a wire change also bumps
+  `PROTO` (major when an existing message changes meaning).
 - **`android-debug/` is never committed to uniPEQ.** It goes into uniPEQ's debug source set only
   through `npm run overlay:apply`, which marks the directory so `overlay:remove` can't delete
   anything else.

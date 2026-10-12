@@ -1,0 +1,20 @@
+[
+	{
+		"relation": ["delegate_permission/common.handle_all_urls"],
+		"target": {
+			"namespace": "android_app",
+			"package_name": "kr.potatosalad775.unipeq",
+			"sha256_cert_fingerprints": [
+				"TODO: Play app-signing key SHA-256 (Play Console → App integrity)"
+			]
+		}
+	},
+	{
+		"relation": ["delegate_permission/common.handle_all_urls"],
+		"target": {
+			"namespace": "android_app",
+			"package_name": "kr.potatosalad775.unipeq.sideload",
+			"sha256_cert_fingerprints": ["TODO: sideload keystore SHA-256 (keytool -list -v)"]
+		}
+	}
+]

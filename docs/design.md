@@ -4,7 +4,10 @@ How modernGraphTool (mGT) and uniPEQ link: pairing, the wire protocol, uniPEQ's 
 mGT's side. It builds on [phase-0.md](phase-0.md), whose seven design consequences are
 requirements here.
 
-**Status: draft (2026-10-12).** Nothing here is built yet.
+**Status (2026-10-12):** this repo's part of step 1 (9) is built: `client/` with its tests, the
+landing page, `assetlinks.json` (fingerprints still to fill in), the probe at `/probe/` and the
+custom domain in `wrangler.jsonc`. Still open in step 1: the GitHub remote, the first tag and a
+deploy.
 
 ## In short
 
@@ -100,8 +103,9 @@ mGT shows the code, the QR code and, on Android, **Open uniPEQ**.
 - **QR code:** it encodes `https://link.unipeq.com/l/<CODE>`. On a phone with uniPEQ, the camera app
   opens it as a verified Android App Link and uniPEQ joins. uniPEQ's manifest declares the
   host `link.unipeq.com` with `autoVerify`, and the Worker serves `/.well-known/assetlinks.json`
-  with uniPEQ's signing certificates: the Play app-signing key and the GitHub release key, since
-  both builds ship. Without uniPEQ, or with a Worker that isn't verified (an operator's own), the
+  for both builds. They are separate apps: the Play build `kr.potatosalad775.unipeq` (Play
+  app-signing key) and the GitHub build `kr.potatosalad775.unipeq.sideload` (its own key), so
+  the file has one statement per package. Without uniPEQ, or with a Worker that isn't verified (an operator's own), the
   URL opens the landing page, which shows the code and an **Open uniPEQ** intent link for that
   server.
 - **Typed code:** uniPEQ's EQ menu has **Link with modernGraphTool**, which opens a sheet with one
@@ -545,11 +549,11 @@ These rules are in the reference client, so mGT gets them by installing it (4.7)
 - **`GET /l/<CODE>`:** the landing page. It shows the code, **Open uniPEQ** (the intent link for
   this server) and install links (Google Play, GitHub releases). It's the App Link target and the
   intent link's fallback.
-- **`/.well-known/assetlinks.json`:** uniPEQ's package with the Play app-signing and GitHub
-  release certificate fingerprints. Served as a static asset.
-- **The room code alphabet** is now in six places: `ROOM_PATH`, `client/protocol.ts` (which both
-  apps install), the landing page's route, `public/probe.js`, `public/index.html` and
-  `scripts/smoke.mjs`. AGENTS.md's list follows.
+- **`/.well-known/assetlinks.json`:** one statement per package (2.2), each with its signing
+  certificate's SHA-256. Served as a static asset.
+- **The room code alphabet** lives in `client/protocol.ts`, which the Worker and the smoke test
+  import, and in the Phase 0 probe (`public/probe/probe.js`, `public/probe/index.html`), which
+  stays import-free.
 - **The custom domain:** `wrangler.jsonc` gets
   `"routes": [{ "pattern": "link.unipeq.com", "custom_domain": true }]`. The `unipeq.com` zone
   is already on Cloudflare, so Wrangler creates the DNS record and certificate on deploy.
@@ -559,12 +563,19 @@ These rules are in the reference client, so mGT gets them by installing it (4.7)
 
 ```
 client/          Framework-free TypeScript, no dependencies: installed by mGT and uniPEQ
-  protocol.ts    Message types and guards, PROTO, ROOM_ALPHABET, code normalization, timings
+  protocol.ts    Message types and guards, PROTO, ROOM_ALPHABET, code normalization, links,
+                 timings. No DOM: the Worker imports it too
   session.ts     Signaling + RTCPeerConnection + DataChannel: the probe's rejoin, fresh and
                  reconnect-on-visible rules, as a typed event emitter
   sync.ts        The shared-list rules: seq/ack/rev, op merging and throttling, resync (4.4, 4.6)
-  liveness.ts    mGT's ping and silence clock (4.7)
+  liveness.ts    mGT's ping and silence clock (4.7), uniPEQ's grace clock (3)
+  host.ts        mGT's side: startHost / resumeHost, hello and version, edits, commands, away
+  joiner.ts      uniPEQ's side: startJoiner, approval gating, the handlers that touch the device
 ```
+
+`host.ts` and `joiner.ts` hold the rules both apps must get identical (the handshake, version
+check, approval gating, `bye`, `away`, command timeouts), so the apps' glue only binds stores and
+UI to their events and handlers.
 
 **Both apps install it as a git dependency**, the npm counterpart of a pub git dependency:
 `"peq-link": "github:<owner>/peq_link_server#semver:^1.0.0"`. npm resolves the range against
@@ -595,18 +606,20 @@ because the client isn't meant for other projects.
     and as uniPEQ with a fake device, through the real Worker. It covers handshake, approval
     gating, concurrent edits converging, `settle` triggering a write, resync after `fresh` and
     after an mGT reload, a major-version mismatch, and grace expiry with a shortened clock.
-  - `sync.ts` gets unit tests (`node:test`).
+  - `sync.ts`, `liveness.ts` and `protocol.ts` have unit tests in `test/` (`node:test`, run
+    directly by Node's type stripping).
 
 ## 8. Phase 0's open items
 
-| Open item                                    | How the design covers it                                                                       |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| USB write in deep Doze                       | A wake lock around each device command from the start (5.2); checked on the first hardware run |
-| Restricted battery setting, other brands     | `backgroundRestricted` warning at approval, and the self-check's pause reports (5.3)           |
-| Cross-device across networks                 | TURN is configured and relay works (1c); measured in step 6 of the build order (9)             |
-| mGT hidden for minutes; same phone past 60 s | Resync on return (4.6); uniPEQ keeps writing meanwhile, since it owns the list                 |
-| "Open uniPEQ" fallback without uniPEQ (6c)   | The landing page (7.1); tested in step 6                                                       |
-| Battery cost of keep-visible (not measured)  | Animations stop in the background (5.1); measured in step 6                                    |
+| Open item                                     | How the design covers it                                                                       |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| USB write in deep Doze                        | A wake lock around each device command from the start (5.2); checked on the first hardware run |
+| Restricted battery setting, other brands      | `backgroundRestricted` warning at approval, and the self-check's pause reports (5.3)           |
+| Cross-device across networks                  | TURN is configured and relay works (1c); measured in step 6 of the build order (9)             |
+| mGT hidden for minutes; same phone past 60 s  | Resync on return (4.6); uniPEQ keeps writing meanwhile, since it owns the list                 |
+| "Open uniPEQ" fallback without uniPEQ (6c)    | The landing page (7.1); tested in step 6                                                       |
+| Battery cost of keep-visible (not measured)   | Animations stop in the background (5.1); measured in step 6                                    |
+| "Open uniPEQ" for the GitHub (sideload) build | Open: the intent link names the Play package, so a sideload-only phone gets the landing page   |
 
 ## 9. Build order
 

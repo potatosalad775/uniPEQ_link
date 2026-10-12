@@ -6,7 +6,7 @@
  * scripts/android-link-probe.mjs, inside uniPEQ's WebView.
  */
 
-/** Crockford base32 without I, L, O, U. Must match ROOM_PATH in src/worker.ts. */
+/** Crockford base32 without I, L, O, U. Must match ROOM_ALPHABET in client/protocol.ts. */
 const ROOM_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const HEARTBEAT_MS = 1000;
 const PING_MS = 5000;

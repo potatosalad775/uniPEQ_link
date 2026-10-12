@@ -1,0 +1,18 @@
+{
+	// The apps' settings, which this source compiles under once installed: strict, DOM, no Node
+	// types, `.ts` imports, nothing a type stripper can't erase (the unit tests run it directly).
+	"compilerOptions": {
+		"target": "es2022",
+		"module": "esnext",
+		"moduleResolution": "bundler",
+		"lib": ["es2023", "dom"],
+		"types": [],
+		"strict": true,
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"erasableSyntaxOnly": true,
+		"skipLibCheck": true
+	},
+	"include": ["client"]
+}
