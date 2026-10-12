@@ -13,7 +13,7 @@ import android.os.IBinder;
 /**
  * Phase 0 link probe, debug builds only: a foreground service that does nothing but exist, to
  * measure whether it keeps the WebView's JavaScript running while uniPEQ is in the background.
- * Started and stopped by peq_link_server's scripts/android-link-probe.mjs (--fgs / --stop-fgs).
+ * Started and stopped by uniPEQ_link's scripts/android-link-probe.mjs (--fgs / --stop-fgs).
  */
 public class LinkProbeService extends Service {
 

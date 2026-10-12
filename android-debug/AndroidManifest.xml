@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
 	Phase 0 link probe, merged into uniPEQ's debug builds only (android/app/src/debug). Copied in by
-	peq_link_server's `npm run overlay:apply`; never commit it to uniPEQ.
+	uniPEQ_link's `npm run overlay:apply`; never commit it to uniPEQ.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 

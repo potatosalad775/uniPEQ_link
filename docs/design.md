@@ -584,7 +584,7 @@ check, approval gating, `bye`, `away`, command timeouts), so the apps' glue only
 UI to their events and handlers.
 
 **Both apps install it as a git dependency**, the npm counterpart of a pub git dependency:
-`"peq-link": "github:<owner>/peq_link_server#semver:^1.0.0"`. npm resolves the range against
+`"peq-link": "github:<owner>/uniPEQ_link#semver:^1.0.0"`. npm resolves the range against
 this repo's tags, and the lockfile pins the exact commit. Nothing goes to the npm registry,
 because the client isn't meant for other projects.
 
@@ -601,7 +601,7 @@ because the client isn't meant for other projects.
   wire-breaking change bumps both majors.
 - **The repo has to be on GitHub, readable by both apps' CI** (public, or a token). It's local
   only for now.
-- **Across repos during development**, `npm install ../peq_link_server` or `npm link` is fine
+- **Across repos during development**, `npm install ../uniPEQ_link` or `npm link` is fine
   locally but never committed, for the same reason uniPEQ never commits a `file:` link to eqcaps:
   CI has no sibling checkout.
 - The apps keep their own glue in `src/lib/link/`: stores, Capacitor and UI.

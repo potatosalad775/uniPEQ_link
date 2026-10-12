@@ -1,4 +1,4 @@
-# peq_link_server
+# uniPEQ_link
 
 Signaling for the modernGraphTool ↔ uniPEQ link: a Cloudflare Worker with one Durable Object per
 link session. It introduces the two apps, and from then on they talk directly over a WebRTC

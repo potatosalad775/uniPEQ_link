@@ -23,7 +23,7 @@ if (command === 'apply') {
 	if (existsSync(target) && !existsSync(marker))
 		fail(`${target} already exists and isn't the probe overlay; merge by hand.`);
 	cpSync(join(root, 'android-debug'), target, { recursive: true });
-	writeFileSync(marker, 'Phase 0 link probe overlay from peq_link_server. Do not commit.\n');
+	writeFileSync(marker, 'Phase 0 link probe overlay from uniPEQ_link. Do not commit.\n');
 	console.log(`Applied to ${target}`);
 	console.log('Next, in uniPEQ: npm run android. Remove with: npm run overlay:remove');
 } else if (command === 'remove') {

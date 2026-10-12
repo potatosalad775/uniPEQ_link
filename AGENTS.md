@@ -1,4 +1,4 @@
-# peq_link_server — agent notes
+# uniPEQ_link — agent notes
 
 Signaling server, and later the wire protocol, for linking **modernGraphTool** (mGT, a static web
 app: `../modernGraphTool`) with **uniPEQ** (Capacitor app, web and Android: `../uniPEQ`). The two apps talk over one
