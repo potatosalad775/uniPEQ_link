@@ -4,10 +4,11 @@ How modernGraphTool (mGT) and uniPEQ link: pairing, the wire protocol, uniPEQ's 
 mGT's side. It builds on [phase-0.md](phase-0.md), whose seven design consequences are
 requirements here.
 
-**Status (2026-10-12):** this repo's part of step 1 (9) is built: `client/` with its tests, the
-landing page, `assetlinks.json` (fingerprints still to fill in), the probe at `/probe/` and the
-custom domain in `wrangler.jsonc`. Still open in step 1: the GitHub remote, the first tag and a
-deploy.
+**Status (2026-10-12):** step 1 (9) is done: `client/` is tagged `v1.0.0` on
+[GitHub](https://github.com/potatosalad775/uniPEQ_link), and the Worker is deployed at
+`link.unipeq.com` with the landing page, both packages' `assetlinks.json` (verified by Google's
+Digital Asset Links API) and the probe at `/probe/`. The smoke test passes against it, TURN relay
+included. Next: uniPEQ's native service (step 2).
 
 ## In short
 
@@ -584,7 +585,7 @@ check, approval gating, `bye`, `away`, command timeouts), so the apps' glue only
 UI to their events and handlers.
 
 **Both apps install it as a git dependency**, the npm counterpart of a pub git dependency:
-`"peq-link": "github:<owner>/uniPEQ_link#semver:^1.0.0"`. npm resolves the range against
+`"peq-link": "github:potatosalad775/uniPEQ_link#semver:^1.0.0"`. npm resolves the range against
 this repo's tags, and the lockfile pins the exact commit. Nothing goes to the npm registry,
 because the client isn't meant for other projects.
 
@@ -599,8 +600,8 @@ because the client isn't meant for other projects.
 - **Releases are tags.** `package.json`'s `version` and a `vX.Y.Z` tag go up together when
   `client/` changes. The package version tracks the code, and `PROTO` tracks the wire (4.2). A
   wire-breaking change bumps both majors.
-- **The repo has to be on GitHub, readable by both apps' CI** (public, or a token). It's local
-  only for now.
+- **The repo has to be on GitHub, readable by both apps' CI.** It's public, so no token is
+  needed.
 - **Across repos during development**, `npm install ../uniPEQ_link` or `npm link` is fine
   locally but never committed, for the same reason uniPEQ never commits a `file:` link to eqcaps:
   CI has no sibling checkout.
