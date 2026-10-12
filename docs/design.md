@@ -81,10 +81,16 @@ see its EQ. They can't drive the user's device, because uniPEQ only joins a room
 1. In mGT, **Link with uniPEQ** creates a room, connects signaling and shows the code plus
    **Open uniPEQ**. The button only appears on Android.
 2. The button is
-   `intent://link?server=<worker>&room=<CODE>#Intent;scheme=unipeq;package=kr.potatosalad775.unipeq;S.browser_fallback_url=<worker>/l/<CODE>;end`,
+   `intent://link?server=<worker>&room=<CODE>#Intent;scheme=unipeq;S.browser_fallback_url=<worker>/l/<CODE>;end`,
    where `<worker>` is `https://link.unipeq.com` unless the site configures another server (6.5).
    This is the Q6 link, which works warm (channel open 1.5 s after the tap) and cold (the room is
-   in `App.getLaunchUrl()`).
+   in `App.getLaunchUrl()`), without Q6's `package=`. The Play and GitHub builds are separate
+   apps (2.2), and naming one sends a phone with only the other to the fallback. Checked on
+   2026-10-12 with a sideload-id debug build: with `package=kr.potatosalad775.unipeq` it got the
+   landing page; without it, uniPEQ opened; with both builds installed, Android asked which to
+   open. Any app can register `unipeq://link`; one that did would learn the code and could pose
+   as uniPEQ, which is what a guessed code allows already (above), and the real uniPEQ would then
+   find the room full.
 3. uniPEQ joins straight away, without waiting for the user, so the channel opens inside the 5 s
    before Chrome loses its network.
 4. uniPEQ shows the approval dialog as soon as signaling tells it mGT's origin (2.3).
@@ -619,7 +625,7 @@ because the client isn't meant for other projects.
 | mGT hidden for minutes; same phone past 60 s  | Resync on return (4.6); uniPEQ keeps writing meanwhile, since it owns the list                 |
 | "Open uniPEQ" fallback without uniPEQ (6c)    | The landing page (7.1); tested in step 6                                                       |
 | Battery cost of keep-visible (not measured)   | Animations stop in the background (5.1); measured in step 6                                    |
-| "Open uniPEQ" for the GitHub (sideload) build | Open: the intent link names the Play package, so a sideload-only phone gets the landing page   |
+| "Open uniPEQ" for the GitHub (sideload) build | The intent link names no package, so it opens either build (2.1); checked on a phone           |
 
 ## 9. Build order
 

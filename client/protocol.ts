@@ -76,16 +76,15 @@ export function landingUrl(server: string, room: string): string {
 	return `${origin(server)}/l/${room}`;
 }
 
-export const UNIPEQ_PACKAGE = 'kr.potatosalad775.unipeq';
-
-/** mGT's "Open uniPEQ" button on Android (design §2.1). */
+/**
+ * mGT's "Open uniPEQ" button on Android (design §2.1). No `package=`: the Play and GitHub builds
+ * are separate apps (`kr.potatosalad775.unipeq`, `….sideload`), and naming one sends a phone with
+ * the other to the fallback.
+ */
 export function intentLink(server: string, room: string): string {
 	const query = `server=${encodeURIComponent(origin(server))}&room=${room}`;
 	const fallback = encodeURIComponent(landingUrl(server, room));
-	return (
-		`intent://link?${query}#Intent;scheme=unipeq;package=${UNIPEQ_PACKAGE};` +
-		`S.browser_fallback_url=${fallback};end`
-	);
+	return `intent://link?${query}#Intent;scheme=unipeq;S.browser_fallback_url=${fallback};end`;
 }
 
 function isServerUrl(href: string): boolean {

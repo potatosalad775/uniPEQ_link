@@ -116,13 +116,12 @@
 				$('session').hidden = false;
 				$('code').textContent = room;
 				const intentQuery = `server=${encodeURIComponent(server)}&room=${room}`;
-				const fallback = encodeURIComponent(
-					'https://play.google.com/store/apps/details?id=kr.potatosalad775.unipeq'
-				);
+				const fallback = encodeURIComponent(`${server}/l/${room}`);
+				// No `package=`, as in client/protocol.ts: it opens the Play or the GitHub build.
 				$('open-unipeq').href =
-					`intent://link?${intentQuery}#Intent;scheme=unipeq;package=kr.potatosalad775.unipeq;` +
+					`intent://link?${intentQuery}#Intent;scheme=unipeq;` +
 					`S.browser_fallback_url=${fallback};end`;
-				$('join-link').href = `${server}/?room=${room}&join=1${relayOnly ? '&relay=1' : ''}`;
+				$('join-link').href = `${server}/probe/?room=${room}&join=1${relayOnly ? '&relay=1' : ''}`;
 				$('adb').textContent =
 					`npm run probe:android -- --server ${server} --room ${room}` +
 					(relayOnly ? ' --relay' : '');

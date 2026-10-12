@@ -44,7 +44,6 @@ describe('room codes', () => {
 		assert.equal(
 			intentLink(server, 'ABCDEFGH'),
 			'intent://link?server=https%3A%2F%2Flink.unipeq.com&room=ABCDEFGH#Intent;scheme=unipeq;' +
-				'package=kr.potatosalad775.unipeq;' +
 				'S.browser_fallback_url=https%3A%2F%2Flink.unipeq.com%2Fl%2FABCDEFGH;end'
 		);
 	});
