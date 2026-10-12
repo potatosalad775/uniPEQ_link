@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="light dark" />
+		<title>Link probe</title>
+		<style>
+			body {
+				font:
+					14px/1.45 system-ui,
+					sans-serif;
+				margin: 0 auto;
+				max-width: 52rem;
+				padding: 1rem;
+			}
+			fieldset {
+				border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+				border-radius: 0.5rem;
+				display: flex;
+				flex-wrap: wrap;
+				gap: 0.5rem 1rem;
+				align-items: center;
+			}
+			input[type='text'] {
+				font: inherit;
+				font-family: ui-monospace, monospace;
+				text-transform: uppercase;
+				width: 9ch;
+			}
+			button,
+			.button {
+				font: inherit;
+				padding: 0.35rem 0.8rem;
+			}
+			#code {
+				font:
+					600 2rem ui-monospace,
+					monospace;
+				letter-spacing: 0.15em;
+			}
+			pre {
+				background: color-mix(in srgb, currentColor 6%, transparent);
+				border-radius: 0.5rem;
+				overflow-x: auto;
+				padding: 0.75rem;
+				font-size: 12px;
+			}
+			#log {
+				max-height: 50vh;
+				overflow-y: auto;
+			}
+			[hidden] {
+				display: none !important;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Link probe</h1>
+		<p>
+			Phase 0 check for the modernGraphTool ↔ uniPEQ link (<code>docs/phase-0.md</code>). Create a
+			room here, then join it from uniPEQ, another browser, or another device.
+		</p>
+
+		<fieldset id="setup">
+			<button id="create" type="button">Create room</button>
+			<span>or</span>
+			<label>Room <input id="room" type="text" maxlength="8" autocomplete="off" /></label>
+			<button id="join" type="button">Join</button>
+			<label><input id="relay" type="checkbox" /> Relay only</label>
+		</fieldset>
+
+		<section id="session" hidden>
+			<p>Room <span id="code"></span></p>
+			<p>
+				<a id="open-unipeq" class="button">Open uniPEQ</a>
+				<a id="join-link" target="_blank">Join link for another browser</a>
+				<button id="download" type="button">Download log</button>
+				<button id="stop" type="button">Stop</button>
+			</p>
+			<p>From the computer the phone is plugged into:</p>
+			<pre id="adb"></pre>
+			<h2>Summary</h2>
+			<pre id="summary"></pre>
+			<h2>Events</h2>
+			<pre id="log"></pre>
+		</section>
+
+		<script type="module">
+			import { newRoomCode, startProbe } from './probe.js';
+
+			const $ = (id) => document.getElementById(id);
+			const server = location.origin;
+			const params = new URLSearchParams(location.search);
+			let probe = null;
+			let refresh = null;
+
+			function start(room, role) {
+				const relayOnly = $('relay').checked;
+				const label = `${role} · ${/Android/.test(navigator.userAgent) ? 'Android' : 'desktop'} Chrome`;
+				probe = startProbe({
+					server,
+					room,
+					label,
+					relayOnly,
+					onEvent: (event) => {
+						const { t, at, kind, ...rest } = event;
+						const line = `${(t / 1000).toFixed(1).padStart(7)}s  ${kind}  ${JSON.stringify(rest)}`;
+						const log = $('log');
+						log.textContent = `${line}\n${log.textContent}`.slice(0, 40000);
+					}
+				});
+				window.__linkProbe = probe;
+
+				$('setup').hidden = true;
+				$('session').hidden = false;
+				$('code').textContent = room;
+				const intentQuery = `server=${encodeURIComponent(server)}&room=${room}`;
+				const fallback = encodeURIComponent(
+					'https://play.google.com/store/apps/details?id=kr.potatosalad775.unipeq'
+				);
+				$('open-unipeq').href =
+					`intent://link?${intentQuery}#Intent;scheme=unipeq;package=kr.potatosalad775.unipeq;` +
+					`S.browser_fallback_url=${fallback};end`;
+				$('join-link').href = `${server}/?room=${room}&join=1${relayOnly ? '&relay=1' : ''}`;
+				$('adb').textContent =
+					`npm run probe:android -- --server ${server} --room ${room}` +
+					(relayOnly ? ' --relay' : '');
+				refresh = setInterval(() => {
+					$('summary').textContent = JSON.stringify(probe.summary(), null, 2);
+				}, 1000);
+			}
+
+			$('create').onclick = () => start(newRoomCode(), 'host');
+			$('join').onclick = () => {
+				const room = $('room').value.trim().toUpperCase();
+				if (/^[0-9A-HJKMNP-TV-Z]{8}$/.test(room)) start(room, 'joiner');
+				else $('room').setCustomValidity('8 characters: 0-9 and A-Z without I, L, O, U');
+				$('room').reportValidity();
+			};
+			$('room').oninput = () => $('room').setCustomValidity('');
+			$('stop').onclick = () => {
+				probe?.stop();
+				clearInterval(refresh);
+			};
+			$('download').onclick = () => {
+				const blob = new Blob([JSON.stringify(probe.export(), null, 2)], {
+					type: 'application/json'
+				});
+				const a = document.createElement('a');
+				a.href = URL.createObjectURL(blob);
+				a.download = `link-probe-${$('code').textContent}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+				a.click();
+				URL.revokeObjectURL(a.href);
+			};
+
+			if (params.get('relay') === '1') $('relay').checked = true;
+			if (params.get('room')) {
+				$('room').value = params.get('room');
+				if (params.get('join') === '1') $('join').click();
+			}
+		</script>
+	</body>
+</html>

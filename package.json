@@ -1,0 +1,28 @@
+{
+	"name": "peq-link-server",
+	"private": true,
+	"type": "module",
+	"description": "Signaling server and protocol for the modernGraphTool ↔ uniPEQ link",
+	"scripts": {
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy",
+		"check": "tsc --noEmit && node --check public/probe.js && node --check scripts/android-link-probe.mjs && node --check scripts/unipeq-debug-overlay.mjs && node --check scripts/freeze-matrix.mjs",
+		"format": "prettier --write .",
+		"lint": "prettier --check .",
+		"test:smoke": "node scripts/smoke.mjs",
+		"probe:android": "node scripts/android-link-probe.mjs",
+		"overlay:apply": "node scripts/unipeq-debug-overlay.mjs apply",
+		"overlay:remove": "node scripts/unipeq-debug-overlay.mjs remove",
+		"probe:freeze-matrix": "node scripts/freeze-matrix.mjs"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^5.20261011.1",
+		"playwright": "1.63.0",
+		"prettier": "^3.9.10",
+		"typescript": "^6.0.3",
+		"wrangler": "^4.149.0"
+	},
+	"engines": {
+		"node": ">=22"
+	}
+}

@@ -1,0 +1,14 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "peq-link",
+	"main": "src/worker.ts",
+	"compatibility_date": "2026-10-01",
+	// The Phase 0 probe page. Matching files are served before the Worker runs.
+	"assets": { "directory": "./public" },
+	"durable_objects": {
+		"bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+	},
+	// SQLite-backed, which is what the free plan offers. Room keeps no storage.
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+	"observability": { "enabled": true }
+}

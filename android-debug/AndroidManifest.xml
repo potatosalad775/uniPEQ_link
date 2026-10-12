@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+	Phase 0 link probe, merged into uniPEQ's debug builds only (android/app/src/debug). Copied in by
+	peq_link_server's `npm run overlay:apply`; never commit it to uniPEQ.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- Android 14+: a connectedDevice service needs one of a short list of permissions (or a
+         granted USB device); this normal one is enough for the probe. -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+        <activity android:name=".MainActivity">
+            <!-- "Open uniPEQ" from Chrome: intent://link?…#Intent;scheme=unipeq;package=…;end.
+                 Chrome only resolves intents to BROWSABLE filters. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="unipeq" android:host="link" />
+            </intent-filter>
+        </activity>
+
+        <!-- Exported so the driver can start it with `adb shell am start-foreground-service`. The
+             real one would be started by the app and not exported. -->
+        <service
+            android:name=".LinkProbeService"
+            android:exported="true"
+            android:foregroundServiceType="connectedDevice" />
+
+        <!-- Freeze experiment (the driver's keep-visible flag): created at process start so it can track the
+             activity that owns the WebView. -->
+        <provider
+            android:name=".LinkProbeVisibility"
+            android:authorities="${applicationId}.linkprobe"
+            android:exported="false" />
+    </application>
+</manifest>

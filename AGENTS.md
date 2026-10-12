@@ -1,0 +1,64 @@
+# peq_link_server — agent notes
+
+Signaling server, and later the wire protocol, for linking **modernGraphTool** (mGT, a static web
+app: `../modernGraphTool`) with **uniPEQ** (Capacitor app, web and Android: `../uniPEQ`). The two apps talk over one
+WebRTC DataChannel; this repo's Cloudflare Worker only introduces them. The link is a one-time
+session, like a call: when it ends, both sides forget it.
+
+**Status: Phase 0 done (2026-10-12); next is the design.** The platform checks on a real phone, their
+answers and the design rules they lead to are in [docs/phase-0.md](docs/phase-0.md).
+
+## Layout
+
+```
+src/worker.ts        Routes /api/rooms/<code>?peer=<uuid> (WebSocket) to the room's Durable Object
+src/room.ts          Room: ≤ 2 peers, relays `signal` messages, attests Origin, issues ICE servers
+public/              Phase 0 probe page (served as static assets by the same Worker)
+  probe.js           The probe itself. Plain JS, no imports: also injected into uniPEQ's WebView
+android-debug/       uniPEQ debug-only overlay: foreground service, unipeq://link deep link,
+                     LinkProbeVisibility (keeps the WebView "visible" for the freeze experiment)
+scripts/
+  smoke.mjs          Signaling rules + a real DataChannel between two headless Chromium pages
+  android-link-probe.mjs   adb + DevTools driver for uniPEQ's side (like uniPEQ's hid-spike)
+  freeze-matrix.mjs  Q4b: every freeze experiment back to back, results from logcat
+  unipeq-debug-overlay.mjs apply|remove the overlay into ../uniPEQ/android/app/src/debug
+docs/phase-0.md      Phase 0: answers, design consequences, findings, how to rerun
+results/             Probe logs, local only (gitignored): docs/phase-0.md is the record
+```
+
+## Commands
+
+`npm run dev` (wrangler on :8787) · `npm run test:smoke` (needs `dev` running, or `-- --server
+<url>`) · `npm run check` (tsc + syntax checks) · `npm run format` / `npm run lint` · `npm run
+deploy`. Relay credentials: `npx wrangler secret put TURN_KEY_ID` / `TURN_KEY_API_TOKEN`
+(Cloudflare Realtime TURN). Without them rooms offer STUN only.
+
+## Rules
+
+- **The server carries connection setup, nothing else.** Only `{ type: 'signal', data }` is
+  relayed, and `data` is never read. EQ traffic goes over the DataChannel. Nothing is stored: a room
+  exists while a peer is connected.
+- **The peer id is stable per tab or app session**, so a signaling reconnect replaces the old
+  socket (close 4002) without a `peer-left` / `peer-joined`: the DataChannel may still be up.
+  If the old socket died first (a phone browser loses its network ~5 s after going to the
+  background), the room does announce `peer-left`, then `peer-joined` with the **same** id. That
+  is a rejoin: nothing is rebuilt, and the rejoining side sends `fresh` only if its own end is dead.
+  `peer-joined` with a new id means a fresh session, which is why it triggers a new offer.
+- **The attested origin is the WebSocket upgrade's `Origin` header.** Browsers can't fake it; other
+  native apps can, so it is a label for the approval dialog, not authentication on its own.
+- **A close before the WebSocket handshake completes is dropped** (seen in workerd), so a full room
+  is answered with `{ type: 'error', code: 'room-full' }` on a plain, non-hibernating socket, and
+  the client closes. Sockets without a peer attachment never count as peers (`Room.sockets()`).
+- **The room code alphabet lives in three places**: `ROOM_PATH` in `src/worker.ts`,
+  `ROOM_ALPHABET` in `public/probe.js`, and the join regex in `public/index.html`.
+- **`android-debug/` is never committed to uniPEQ.** It goes into uniPEQ's debug source set only
+  through `npm run overlay:apply`, which marks the directory so `overlay:remove` can't delete
+  anything else.
+- Free plan: the Durable Object is SQLite-backed (`new_sqlite_classes`), which is what the free
+  plan offers, and uses the hibernation API with a `ping` → `pong` auto-response, so idle rooms
+  cost nothing.
+
+## Style
+
+Same as modernGraphTool and uniPEQ: tabs, single quotes, no trailing commas, 100 columns
+(`.prettierrc`). Comments state the rule and its reason in place.
