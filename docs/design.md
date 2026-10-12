@@ -120,6 +120,11 @@ mGT shows the code, the QR code and, on Android, **Open uniPEQ**.
   as 0, spaces and dashes dropped. A typed code joins uniPEQ's default server. If an mGT site uses
   another server, it shows a hint next to the code to use the QR code or link. This also works in
   uniPEQ on the web, for example a second desktop browser.
+- **Web link:** off Android, **Open uniPEQ** opens uniPEQ on the web in a new tab, with the room
+  in its address: `webLink(server, room)` is `<web app>?link=<landing URL>`, where the web app is
+  `WEB_APP` (uniPEQ's GitHub Pages address, which GitHub redirects to a custom domain once there
+  is one). uniPEQ on the web reads `link` at start with `parseRoomInput`, joins, and drops it from
+  the address so a reload doesn't join again. The landing page offers the same link off Android.
 
 mGT renders the QR code itself, through a small QR library behind a dynamic `import()`, so it
 works under any site's content security policy and stays out of mGT's boot bundle.
@@ -478,8 +483,9 @@ The protocol core stays framework-free, like `device-peq/`. Capacitor calls stay
 The accordion sits in the EQ tab and has these states:
 
 - **Start:** **Link with uniPEQ**.
-- **Waiting:** the code, the QR code, **Open uniPEQ** (Android only) and Cancel.
-- **Approve in uniPEQ:** with **Open uniPEQ** again on Android.
+- **Waiting:** the code, the QR code, **Open uniPEQ** (the intent link on Android, the web link
+  elsewhere) and Cancel.
+- **Approve in uniPEQ:** with **Open uniPEQ** again.
 - **Linked:** host app, device and Unlink.
 - **Stalled:** "uniPEQ isn't answering. Open it on your phone".
 - **Ended:** the reason (unlinked, denied, version, timed out), with **Link again**.
@@ -554,7 +560,7 @@ These rules are in the reference client, so mGT gets them by installing it (4.7)
 ### 7.1 Worker changes
 
 - **`GET /l/<CODE>`:** the landing page. It shows the code, **Open uniPEQ** (the intent link for
-  this server) and install links (Google Play, GitHub releases). It's the App Link target and the
+  this server on Android, the web link elsewhere) and install links (Google Play, GitHub releases). It's the App Link target and the
   intent link's fallback.
 - **`/.well-known/assetlinks.json`:** one statement per package (2.2), each with its signing
   certificate's SHA-256. Served as a static asset.

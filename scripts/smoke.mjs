@@ -54,8 +54,11 @@ async function until(predicate, ms = 5000) {
 	const landing = await fetch(`${server}/l/ABCDEFGH`);
 	const landingHtml = await landing.text();
 	check(
-		'the landing page shows the code and an intent link',
-		landing.ok && landingHtml.includes('ABCD-EFGH') && landingHtml.includes('intent://link?')
+		'the landing page shows the code, an intent link and the web app',
+		landing.ok &&
+			landingHtml.includes('ABCD-EFGH') &&
+			landingHtml.includes('intent://link?') &&
+			landingHtml.includes('?link=http')
 	);
 	check('a bad landing code is a 404', (await fetch(`${server}/l/ABCDEFGU`)).status === 404);
 	const links = await fetch(`${server}/.well-known/assetlinks.json`);

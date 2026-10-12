@@ -87,6 +87,25 @@ export function intentLink(server: string, room: string): string {
 	return `intent://link?${query}#Intent;scheme=unipeq;S.browser_fallback_url=${fallback};end`;
 }
 
+/**
+ * uniPEQ on the web. Its GitHub Pages address, which GitHub redirects, query and all, to a custom
+ * domain once one is set up, so links made with it keep working.
+ */
+export const WEB_APP = 'https://potatosalad775.github.io/uniPEQ/';
+
+/** The query parameter uniPEQ on the web joins from. It holds anything `parseRoomInput` accepts. */
+export const WEB_LINK_PARAM = 'link';
+
+/**
+ * mGT's "Open uniPEQ" off Android: uniPEQ on the web, joining the room as it opens (design §2.2).
+ * It carries the landing URL, so the server travels with the code.
+ */
+export function webLink(server: string, room: string, app = WEB_APP): string {
+	const url = new URL(app);
+	url.searchParams.set(WEB_LINK_PARAM, landingUrl(server, room));
+	return url.href;
+}
+
 function isServerUrl(href: string): boolean {
 	try {
 		const { protocol } = new URL(href);

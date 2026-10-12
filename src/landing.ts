@@ -1,10 +1,10 @@
 /**
  * `/l/<CODE>`: where the QR code points and where the intent link falls back (design §7.1). With
  * uniPEQ installed and this host verified, Android opens uniPEQ instead and this never shows.
- * Otherwise it shows the code, an "Open uniPEQ" intent link for this server, and where to get
- * uniPEQ.
+ * Otherwise it shows the code, an "Open uniPEQ" intent link for this server (Android) or a link to
+ * uniPEQ on the web (anywhere else), and where to get uniPEQ.
  */
-import { formatRoomCode, intentLink } from '../client/protocol';
+import { formatRoomCode, intentLink, webLink } from '../client/protocol';
 
 const PLAY = 'https://play.google.com/store/apps/details?id=kr.potatosalad775.unipeq';
 const RELEASES = 'https://github.com/potatosalad775/uniPEQ/releases/latest';
@@ -13,6 +13,7 @@ const RELEASES = 'https://github.com/potatosalad775/uniPEQ/releases/latest';
 export function landingPage(server: string, room: string): Response {
 	const code = formatRoomCode(room);
 	const open = intentLink(server, room).replaceAll('&', '&amp;');
+	const web = webLink(server, room).replaceAll('&', '&amp;');
 	const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -27,6 +28,7 @@ export function landingPage(server: string, room: string): Response {
 	.open { display: inline-block; padding: 0.75rem 1.5rem; border-radius: 0.5rem; background: #2563eb; color: #fff; font-weight: 600; text-decoration: none; }
 	.android { display: none; }
 	.is-android .android { display: block; }
+	.is-android .web { display: none; }
 	p { margin: 1rem 0; }
 	small { opacity: 0.7; }
 </style>
@@ -36,6 +38,7 @@ export function landingPage(server: string, room: string): Response {
 <p>A modernGraphTool page wants to link with uniPEQ. The link code is</p>
 <p class="code">${code}</p>
 <div class="android"><p><a class="open" href="${open}">Open uniPEQ</a></p></div>
+<div class="web"><p><a class="open" href="${web}">Open uniPEQ on the web</a></p></div>
 <p>Or open uniPEQ, choose <b>Link with modernGraphTool</b> in the EQ menu and type the code.</p>
 <p><small>Don't have uniPEQ? Get it on <a href="${PLAY}">Google Play</a> or from <a href="${RELEASES}">GitHub</a>.</small></p>
 <script>if (/Android/i.test(navigator.userAgent)) document.body.classList.add('is-android');</script>

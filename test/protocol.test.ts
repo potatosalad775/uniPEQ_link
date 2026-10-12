@@ -4,6 +4,8 @@ import { describe, it } from 'node:test';
 import {
 	intentLink,
 	landingUrl,
+	webLink,
+	WEB_LINK_PARAM,
 	newRoomCode,
 	normalizeRoomCode,
 	parseMessage,
@@ -45,6 +47,23 @@ describe('room codes', () => {
 			intentLink(server, 'ABCDEFGH'),
 			'intent://link?server=https%3A%2F%2Flink.unipeq.com&room=ABCDEFGH#Intent;scheme=unipeq;' +
 				'S.browser_fallback_url=https%3A%2F%2Flink.unipeq.com%2Fl%2FABCDEFGH;end'
+		);
+	});
+
+	it('builds the web link, which uniPEQ on the web reads back', () => {
+		const href = webLink(server, 'ABCDEFGH', 'https://app.example/uniPEQ/');
+		assert.equal(
+			href,
+			'https://app.example/uniPEQ/?link=https%3A%2F%2Flink.unipeq.com%2Fl%2FABCDEFGH'
+		);
+		const param = new URL(href).searchParams.get(WEB_LINK_PARAM) ?? '';
+		assert.deepEqual(parseRoomInput(param, 'https://default.example'), {
+			server,
+			room: 'ABCDEFGH'
+		});
+		assert.match(
+			webLink(server, 'ABCDEFGH'),
+			/^https:\/\/potatosalad775\.github\.io\/uniPEQ\/\?link=/
 		);
 	});
 });
