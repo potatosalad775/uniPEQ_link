@@ -4,7 +4,7 @@
  */
 
 /** `[major, minor]`. Major: an existing message changed meaning. Minor: something was added. */
-export const PROTO = [1, 0] as const;
+export const PROTO = [1, 1] as const;
 export type Proto = readonly [major: number, minor: number];
 
 export const CHANNEL_LABEL = 'peq-link';
@@ -245,6 +245,11 @@ export interface LinkStatus {
 	/** `code` is an eqcaps BridgeError code. */
 	failure: { op: string; code: string } | null;
 	review: { rev: number; changes: PlanChange[]; clipRisk: boolean; infeasible: boolean } | null;
+	/**
+	 * Proto 1.1. uniPEQ shows the volume warning: nothing is written to this device until the user
+	 * answers it, on either side (`consent`). Absent from a 1.0 uniPEQ.
+	 */
+	consent?: boolean;
 }
 
 // ── Messages (design §4.3) ───────────────────────────────────────────────────────────────────
@@ -253,9 +258,18 @@ export type ByeReason = 'unlink' | 'denied' | 'version' | 'timeout' | 'replaced'
 export type Editor = 'mgt' | 'unipeq' | 'device';
 export type PauseCause = 'frozen' | 'hidden' | 'stopped';
 
-export const COMMANDS = ['read', 'write', 'review', 'switch', 'fit', 'reconnect', 'auto-write'];
+export const COMMANDS = [
+	'read',
+	'write',
+	'review',
+	'switch',
+	'fit',
+	'reconnect',
+	'auto-write',
+	'consent'
+];
 export type CommandName =
-	'read' | 'write' | 'review' | 'switch' | 'fit' | 'reconnect' | 'auto-write';
+	'read' | 'write' | 'review' | 'switch' | 'fit' | 'reconnect' | 'auto-write' | 'consent';
 
 export interface CommandArgs {
 	read: undefined;
@@ -267,6 +281,11 @@ export interface CommandArgs {
 	fit: undefined;
 	reconnect: undefined;
 	'auto-write': { on: boolean };
+	/**
+	 * Proto 1.1: the volume warning's answer. `accept` lets uniPEQ write to this device; `quiet`
+	 * also turns the warning off for later connections (uniPEQ's setting, kept in one place).
+	 */
+	consent: { accept: boolean; quiet?: boolean };
 }
 
 export interface HelloMessage {

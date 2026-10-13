@@ -186,7 +186,9 @@ uniPEQ: idle → joining → awaiting approval (dialog) → linked ⇄ waiting f
 
 ### 4.2 Versioning
 
-Both `hello`s carry `proto: [major, minor]`, currently `[1, 0]`.
+Both `hello`s carry `proto: [major, minor]`, currently `[1, 1]`.
+
+- **1.1** adds `status.consent` and the `consent` command (the volume warning, 4.5).
 
 - **Different major:** both sides send `bye: version` with their own `proto` and close. The UI
   names the app to update: "uniPEQ is older than this site's link" or "Update modernGraphTool".
@@ -308,6 +310,7 @@ interface LinkStatus {
 	auto: { on: boolean; pending: boolean; paused: boolean; stopped: boolean; clipRisk: boolean };
 	failure: { op: string; code: string } | null; // eqcaps BridgeError code
 	review: { rev: number; changes: PlanChange[]; clipRisk: boolean; infeasible: boolean } | null;
+	consent?: boolean; // 1.1: the volume warning is up, and nothing is written until it's answered
 }
 ```
 
@@ -322,9 +325,15 @@ Commands (`cmd.name`):
 | `fit`        | —                              | `fitFilters` (an edit, so it syncs)                                            |
 | `reconnect`  | —                              | Reconnects a `disconnectOnSave` device or a dropped one                        |
 | `auto-write` | `on`                           | Sets uniPEQ's auto-write setting (one setting, kept in one place)              |
+| `consent`    | `accept`, `quiet?`             | 1.1. Answers the volume warning; `quiet` turns it off for later connections    |
 
 - A command that touches the device holds a short wake lock (5.2) and answers `re` when it's done.
   Its effects arrive as `eq`, `status` and `device`, not in `re`.
+- **The volume warning.** A write can pop, drop out or jump in level mid-playback, so uniPEQ asks
+  the user to pause or lower the volume once per connection, before its first write (auto-write
+  on connecting, else the first Write or preset switch). While it waits, `status.consent` is true
+  and nothing is written. mGT shows the same warning, and either side's answer closes both. A 1.0
+  mGT doesn't know it: the warning shows in uniPEQ only, and the user answers there.
 - A review shows on both sides, and either side's answer closes both dialogs. `PlanChange` has the
   same shape in both apps; uniPEQ's `push-plan.ts` is a copy of mGT's.
 
@@ -523,6 +532,11 @@ panel, because panels unmount on every switch.
   type. AutoEQ optimizes only the bands it can make and keeps the others in place, counting their
   response as fixed. A linked list may hold `HPQ` or `LPQ` bands from the device, and AutoEQ must
   not drop them.
+- **The preamp is uniPEQ's.** `eq.preamp` is the value uniPEQ writes (Auto's moved down onto the
+  device's grid), and mGT shows and plays exactly that while linked. Both derive Auto the same way
+  (no make-up gain for a cut-only list, the peak rounded up to 0.1 dB), so an optimistic edit
+  shows the right value before the echo. A fixed preamp (a device's own, read in uniPEQ) is shown
+  as fixed; mGT turns Auto back on with the `auto-preamp` op. mGT's band edits carry no preamp.
 - **The shared list is the list.** While linked:
   - mGT's channel scope is fixed to both ears, and per-band on/off is hidden.
   - Editing follows `status.editable`.
