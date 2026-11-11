@@ -8,6 +8,7 @@ import { LivenessClock } from './liveness.ts';
 import {
 	PROTO,
 	TIMINGS,
+	newLaunchToken,
 	newRoomCode,
 	type ByeReason,
 	type CommandArgs,
@@ -64,6 +65,8 @@ interface Saved {
 	server: string;
 	room: string;
 	peerId: string;
+	/** Absent from a session saved by a client before proto 1.2. */
+	launch?: string;
 }
 
 type SessionStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -91,6 +94,12 @@ export class HostLink extends Emitter<HostEvents> {
 	readonly session: LinkSession;
 	/** Rejoined after a reload: uniPEQ's list is adopted without asking (design §4.6). */
 	readonly resumed: boolean;
+	/**
+	 * This session's launch token, for the links mGT opens itself: `intentLink` and `webLink`.
+	 * Never the QR code or the shown code (design §2.4).
+	 */
+	readonly launch: string;
+	private launched = false;
 	private readonly options: HostOptions;
 	private readonly timings: Timings;
 	private readonly proto: Proto;
@@ -108,8 +117,9 @@ export class HostLink extends Emitter<HostEvents> {
 	>();
 
 	/** Use `startHost` or `resumeHost`. */
-	constructor(options: HostOptions, room: string, peerId?: string) {
+	constructor(options: HostOptions, room: string, peerId?: string, launch?: string) {
 		super();
+		this.launch = launch ?? newLaunchToken();
 		this.options = options;
 		this.timings = options.timings ?? TIMINGS;
 		this.proto = options.proto ?? PROTO;
@@ -154,6 +164,14 @@ export class HostLink extends Emitter<HostEvents> {
 
 	get state(): HostState {
 		return this.current;
+	}
+
+	/**
+	 * uniPEQ was opened by a link this page opened itself, so it runs on this machine. False for a
+	 * scanned or typed code, and for a uniPEQ before proto 1.2: unknown, not "elsewhere".
+	 */
+	get launchedHere(): boolean {
+		return this.launched;
 	}
 
 	get device(): LinkDevice | null {
@@ -230,6 +248,7 @@ export class HostLink extends Emitter<HostEvents> {
 					this.end('version', 'self', message.proto);
 					return;
 				}
+				this.launched = message.launch === this.launch;
 				this.emit('hello', message);
 				break;
 			case 'approval':
@@ -308,7 +327,12 @@ export class HostLink extends Emitter<HostEvents> {
 	}
 
 	private save(): void {
-		const saved: Saved = { server: this.server, room: this.room, peerId: this.session.peerId };
+		const saved: Saved = {
+			server: this.server,
+			room: this.room,
+			peerId: this.session.peerId,
+			launch: this.launch
+		};
 		try {
 			this.storage?.setItem(STORAGE_KEY, JSON.stringify(saved));
 		} catch {
@@ -335,7 +359,8 @@ export function resumeHost(options: HostOptions): HostLink | null {
 		return null;
 	}
 	if (!saved || saved.server !== new URL(options.server).origin) return null;
-	return new HostLink(options, saved.room, saved.peerId);
+	const launch = typeof saved.launch === 'string' ? saved.launch : undefined;
+	return new HostLink(options, saved.room, saved.peerId, launch);
 }
 
 function defaultStorage(): SessionStore | null {

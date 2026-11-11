@@ -6,6 +6,7 @@ import {
 	landingUrl,
 	webLink,
 	WEB_LINK_PARAM,
+	newLaunchToken,
 	newRoomCode,
 	normalizeRoomCode,
 	parseMessage,
@@ -65,6 +66,42 @@ describe('room codes', () => {
 			webLink(server, 'ABCDEFGH'),
 			/^https:\/\/potatosalad775\.github\.io\/uniPEQ\/\?link=/
 		);
+	});
+
+	it('carries the launch token on the links mGT opens, and reads it back', () => {
+		const launch = newLaunchToken();
+		assert.match(launch, /^[0-9A-HJKMNP-TV-Z]{16}$/);
+		assert.notEqual(launch, newLaunchToken());
+
+		const intent = intentLink(server, 'ABCDEFGH', launch);
+		assert.ok(
+			intent.startsWith(
+				`intent://link?server=https%3A%2F%2Flink.unipeq.com&room=ABCDEFGH&from=${launch}#`
+			)
+		);
+		// The fallback is the landing page, which anyone can reach: no token.
+		assert.ok(
+			intent.endsWith('S.browser_fallback_url=https%3A%2F%2Flink.unipeq.com%2Fl%2FABCDEFGH;end')
+		);
+		const opened = intent.slice('intent://'.length, intent.indexOf('#'));
+		assert.deepEqual(parseRoomInput(`unipeq://${opened}`, server), {
+			server,
+			room: 'ABCDEFGH',
+			launch
+		});
+
+		const web = webLink(server, 'ABCDEFGH', 'https://app.example/uniPEQ/', launch);
+		const param = new URL(web).searchParams.get(WEB_LINK_PARAM) ?? '';
+		assert.deepEqual(parseRoomInput(param, server), { server, room: 'ABCDEFGH', launch });
+	});
+
+	it('finds no launch token on a QR link, a typed code or a malformed token', () => {
+		assert.equal(parseRoomInput(landingUrl(server, 'ABCDEFGH'), server)?.launch, undefined);
+		assert.equal(parseRoomInput('ABCDEFGH', server)?.launch, undefined);
+		assert.deepEqual(parseRoomInput(`${server}/l/ABCDEFGH?from=nope`, server), {
+			server,
+			room: 'ABCDEFGH'
+		});
 	});
 });
 

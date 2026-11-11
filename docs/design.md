@@ -147,6 +147,30 @@ works under any site's content security policy and stays out of mGT's boot bundl
 - If uniPEQ is already linked and another link arrives, it asks "End the link with `<host A>` and
   link with `<host B>`?". Yes sends `bye: replaced` to the old peer.
 
+### 2.4 Launched from this browser: the launch token
+
+A device with an EQ plays whatever is sent through it with that EQ applied. mGT's audio player
+applies the same list in the browser, so sound that plays through uniPEQ's device would get the EQ
+twice, and mGT has to leave it to the device then. That depends on where uniPEQ runs, which the
+link doesn't otherwise say: the same phone, or a phone across the room from a desktop browser.
+
+- mGT makes a **launch token** per session (`newLaunchToken`: 16 characters of the room alphabet,
+  80 random bits) and puts it, as `from=<token>`, only on the links it opens itself: the intent
+  link (2.1) and the web link (2.2, on the landing URL inside `link=`). The QR code, the shown
+  code, the landing page and the intent link's fallback never carry it.
+- `parseRoomInput` returns it as `launch`. uniPEQ passes it to `startJoiner`, which sends it back in
+  `hello`. uniPEQ does nothing else with it.
+- A match (`HostLink.launchedHere`) means uniPEQ was opened by this page, so it runs on this
+  machine. No match means unknown, not "elsewhere": a scanned or typed code on the same phone,
+  or a uniPEQ before 1.2.
+- It is a proof where a flag would be a guess. uniPEQ can't tell from how it joined: the landing
+  page reached by a QR scan also offers the intent link.
+- The token is saved with the session (4.6), so a reload of mGT keeps the answer. uniPEQ keeps it
+  with its session and sends it on every `hello`.
+- It only sets mGT's default. The same machine still isn't the same audio path (Bluetooth
+  headphones set up from a phone can be playing a computer's sound), so mGT lets the user say
+  otherwise.
+
 ## 3. Session lifecycle
 
 ```
@@ -186,9 +210,10 @@ uniPEQ: idle → joining → awaiting approval (dialog) → linked ⇄ waiting f
 
 ### 4.2 Versioning
 
-Both `hello`s carry `proto: [major, minor]`, currently `[1, 1]`.
+Both `hello`s carry `proto: [major, minor]`, currently `[1, 2]`.
 
 - **1.1** adds `status.consent` and the `consent` command (the volume warning, 4.5).
+- **1.2** adds `launch` to uniPEQ's `hello` (the launch token, 2.4).
 
 - **Different major:** both sides send `bye: version` with their own `proto` and close. The UI
   names the app to update: "uniPEQ is older than this site's link" or "Update modernGraphTool".
@@ -199,21 +224,21 @@ Both `hello`s carry `proto: [major, minor]`, currently `[1, 1]`.
 
 ### 4.3 Messages
 
-| Type       | Direction    | Body                                                                                           | When                                    |
-| ---------- | ------------ | ---------------------------------------------------------------------------------------------- | --------------------------------------- |
-| `hello`    | both         | `proto`, `app` (`mgt`/`unipeq`), `version`, mGT: `site?`, `lastRev`, `dirty`                   | First message on every channel open     |
-| `approval` | uniPEQ → mGT | `state`: `pending` / `approved`                                                                | After `hello`; on approval              |
-| `bye`      | both         | `reason`: `unlink` / `denied` / `version` / `timeout` / `replaced`                             | Session ends                            |
-| `away`     | mGT → uniPEQ | —                                                                                              | `pagehide`                              |
-| `ping`     | mGT → uniPEQ | `n`                                                                                            | Every 5 s                               |
-| `pong`     | uniPEQ → mGT | `n`                                                                                            | From the `ping` handler                 |
-| `edit`     | mGT → uniPEQ | `seq`, `ops[]`, `burst?`, `settle?`                                                            | mGT's edits, at most every 50 ms        |
-| `eq`       | uniPEQ → mGT | `rev`, `eq`, `ack`, `by` (`mgt`/`unipeq`/`device`), `burst?`, `fresh?`                         | After every change, at most every 50 ms |
-| `device`   | uniPEQ → mGT | `null`, or `name`, `kind`, `profile`, `profileSource`, `profileId`, `identity`, `capabilities` | On approval and on any device change    |
-| `status`   | uniPEQ → mGT | see 4.5                                                                                        | On any change                           |
-| `cmd`      | mGT → uniPEQ | `id`, `name`, `args?`                                                                          | Buttons in mGT                          |
-| `re`       | uniPEQ → mGT | `id`, `ok`, `code?`                                                                            | When the command finishes               |
-| `notice`   | uniPEQ → mGT | `kind: 'paused'`, `cause`, `ms`                                                                | Self-check (5.3)                        |
+| Type       | Direction    | Body                                                                                            | When                                    |
+| ---------- | ------------ | ----------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `hello`    | both         | `proto`, `app` (`mgt`/`unipeq`), `version`, mGT: `site?`, `lastRev`, `dirty`; uniPEQ: `launch?` | First message on every channel open     |
+| `approval` | uniPEQ → mGT | `state`: `pending` / `approved`                                                                 | After `hello`; on approval              |
+| `bye`      | both         | `reason`: `unlink` / `denied` / `version` / `timeout` / `replaced`                              | Session ends                            |
+| `away`     | mGT → uniPEQ | —                                                                                               | `pagehide`                              |
+| `ping`     | mGT → uniPEQ | `n`                                                                                             | Every 5 s                               |
+| `pong`     | uniPEQ → mGT | `n`                                                                                             | From the `ping` handler                 |
+| `edit`     | mGT → uniPEQ | `seq`, `ops[]`, `burst?`, `settle?`                                                             | mGT's edits, at most every 50 ms        |
+| `eq`       | uniPEQ → mGT | `rev`, `eq`, `ack`, `by` (`mgt`/`unipeq`/`device`), `burst?`, `fresh?`                          | After every change, at most every 50 ms |
+| `device`   | uniPEQ → mGT | `null`, or `name`, `kind`, `profile`, `profileSource`, `profileId`, `identity`, `capabilities`  | On approval and on any device change    |
+| `status`   | uniPEQ → mGT | see 4.5                                                                                         | On any change                           |
+| `cmd`      | mGT → uniPEQ | `id`, `name`, `args?`                                                                           | Buttons in mGT                          |
+| `re`       | uniPEQ → mGT | `id`, `ok`, `code?`                                                                             | When the command finishes               |
+| `notice`   | uniPEQ → mGT | `kind: 'paused'`, `cause`, `ms`                                                                 | Self-check (5.3)                        |
 
 The shared list:
 

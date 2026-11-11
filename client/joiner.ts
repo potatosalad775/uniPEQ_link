@@ -72,6 +72,8 @@ export interface JoinerOptions {
 	handlers: JoinerHandlers;
 	/** uniPEQ's default server. Another one is named in the dialog. */
 	defaultServer?: string;
+	/** The launch token `parseRoomInput` found on the link, sent back in `hello` (design §2.4). */
+	launch?: string;
 	/** Whether uniPEQ is in front (Capacitor's `appStateChange`). Default true. */
 	foreground?: boolean;
 	timings?: Timings;
@@ -200,7 +202,8 @@ export class JoinerLink extends Emitter<JoinerEvents> {
 			t: 'hello',
 			proto: this.proto,
 			app: 'unipeq',
-			version: this.options.version
+			version: this.options.version,
+			...(this.options.launch ? { launch: this.options.launch } : {})
 		});
 		if (this.denied) this.end('denied', 'self');
 	}

@@ -4,7 +4,7 @@
  */
 
 /** `[major, minor]`. Major: an existing message changed meaning. Minor: something was added. */
-export const PROTO = [1, 1] as const;
+export const PROTO = [1, 2] as const;
 export type Proto = readonly [major: number, minor: number];
 
 export const CHANNEL_LABEL = 'peq-link';
@@ -45,13 +45,32 @@ export function normalizeRoomCode(input: string): string | null {
 }
 
 /**
+ * The query parameter that carries mGT's launch token on the links mGT opens itself (design
+ * §2.4). The QR code and the landing page's own links never carry it.
+ */
+export const LAUNCH_PARAM = 'from';
+const LAUNCH_TOKEN = /^[0-9A-HJKMNP-TV-Z]{16}$/;
+
+/** A launch token: 80 random bits, in the room code's alphabet so it needs no escaping. */
+export function newLaunchToken(): string {
+	const bytes = crypto.getRandomValues(new Uint8Array(16));
+	return Array.from(bytes, (b) => ROOM_ALPHABET[b % 32]).join('');
+}
+
+function launchOf(url: URL): { launch?: string } {
+	const token = url.searchParams.get(LAUNCH_PARAM);
+	return token && LAUNCH_TOKEN.test(token) ? { launch: token } : {};
+}
+
+/**
  * What uniPEQ's code field accepts: a code (joins `defaultServer`), a landing or App Link URL
  * (`https://<server>/l/<CODE>`), or the intent link's `unipeq://link?server=…&room=…`.
+ * `launch` is the token of a link mGT opened itself, to hand to `startJoiner` (design §2.4).
  */
 export function parseRoomInput(
 	input: string,
 	defaultServer: string
-): { server: string; room: string } | null {
+): { server: string; room: string; launch?: string } | null {
 	const text = input.trim();
 	const room = normalizeRoomCode(text);
 	if (room) return { server: defaultServer, room };
@@ -64,11 +83,15 @@ export function parseRoomInput(
 	if (url.protocol === 'unipeq:') {
 		const server = url.searchParams.get('server');
 		const code = normalizeRoomCode(url.searchParams.get('room') ?? '');
-		return server && code && isServerUrl(server) ? { server: origin(server), room: code } : null;
+		return server && code && isServerUrl(server)
+			? { server: origin(server), room: code, ...launchOf(url) }
+			: null;
 	}
 	const landing = /^\/l\/([^/]+)\/?$/.exec(url.pathname);
 	const code = landing && normalizeRoomCode(decodeURIComponent(landing[1]));
-	return code && isServerUrl(url.href) ? { server: url.origin, room: code } : null;
+	return code && isServerUrl(url.href)
+		? { server: url.origin, room: code, ...launchOf(url) }
+		: null;
 }
 
 /** The QR code's target and the intent link's fallback (design §7.1). */
@@ -79,10 +102,11 @@ export function landingUrl(server: string, room: string): string {
 /**
  * mGT's "Open uniPEQ" button on Android (design §2.1). No `package=`: the Play and GitHub builds
  * are separate apps (`kr.potatosalad775.unipeq`, `….sideload`), and naming one sends a phone with
- * the other to the fallback.
+ * the other to the fallback. `launch` is mGT's token (design §2.4); the fallback never carries it.
  */
-export function intentLink(server: string, room: string): string {
-	const query = `server=${encodeURIComponent(origin(server))}&room=${room}`;
+export function intentLink(server: string, room: string, launch?: string): string {
+	const from = launch ? `&${LAUNCH_PARAM}=${launch}` : '';
+	const query = `server=${encodeURIComponent(origin(server))}&room=${room}${from}`;
 	const fallback = encodeURIComponent(landingUrl(server, room));
 	return `intent://link?${query}#Intent;scheme=unipeq;S.browser_fallback_url=${fallback};end`;
 }
@@ -98,11 +122,14 @@ export const WEB_LINK_PARAM = 'link';
 
 /**
  * mGT's "Open uniPEQ" off Android: uniPEQ on the web, joining the room as it opens (design §2.2).
- * It carries the landing URL, so the server travels with the code.
+ * It carries the landing URL, so the server travels with the code. `launch` is mGT's token (design
+ * §2.4), carried on that landing URL.
  */
-export function webLink(server: string, room: string, app = WEB_APP): string {
+export function webLink(server: string, room: string, app = WEB_APP, launch?: string): string {
 	const url = new URL(app);
-	url.searchParams.set(WEB_LINK_PARAM, landingUrl(server, room));
+	const landing = new URL(landingUrl(server, room));
+	if (launch) landing.searchParams.set(LAUNCH_PARAM, launch);
+	url.searchParams.set(WEB_LINK_PARAM, landing.href);
 	return url.href;
 }
 
@@ -298,6 +325,12 @@ export interface HelloMessage {
 	/** mGT: the last `eq` it adopted, and whether it has edits uniPEQ never acknowledged. */
 	lastRev?: number | null;
 	dirty?: boolean;
+	/**
+	 * uniPEQ, proto 1.2: the launch token of the link it was opened by, when that link carried one.
+	 * mGT puts its token only on the links it opens itself, so a match means uniPEQ runs on the
+	 * machine mGT does (design §2.4).
+	 */
+	launch?: string;
 }
 
 export type Message =
