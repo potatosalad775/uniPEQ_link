@@ -448,7 +448,10 @@ Commands (`cmd.name`):
 - A command that touches the device holds a short wake lock (5.2) and answers `re` when it's done.
   Its effects arrive as `eq`, `status` and `device`, not in `re`.
 - `switch`'s `<id>` is an id from `status.slots`, else from `capabilities.slots`.
-- **`eq`** brings a new `device` (its `profile` is the new EQ's) and a `fresh` list.
+- **`eq`** brings a new `device` (its `profile` is the new EQ's) and a `fresh` list. It is refused
+  with `unwritten` while the list holds changes the device never got: they belong to the EQ being
+  left, and uniPEQ's own dialog for that (write or discard) isn't one mGT can answer. mGT writes
+  or reads first.
 - **`control`**: the value arrives in `status.controls`. A control that makes the device reconnect
   sets `needsReconnect`.
 - **The preset commands** are for a device with `capabilities.editsSlots`, and the list comes back
