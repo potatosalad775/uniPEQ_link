@@ -5,12 +5,12 @@ mGT's side. It builds on [phase-0.md](phase-0.md), whose seven design consequenc
 requirements here.
 
 **Status (2026-11-25):** step 1 (9) is done: `client/` is tagged on
-[GitHub](https://github.com/potatosalad775/uniPEQ_link) (latest `v1.4.0`: protocol 1.3, which
-carries several EQs, the channels apart, device controls and the device's own preset list), and
-the Worker is deployed at `link.unipeq.com` with the landing page, both packages'
+[GitHub](https://github.com/potatosalad775/uniPEQ_link) (latest `v1.5.0`: protocol 1.4, which
+carries several EQs by name, the channels apart, device controls and the device's own preset
+list), and the Worker is deployed at `link.unipeq.com` with the landing page, both packages'
 `assetlinks.json` (verified by Google's Digital Asset Links API) and the probe at `/probe/`. The
 smoke test passes against it, TURN relay included. Next: uniPEQ's native service (step 2). The
-apps' glue for 1.3 isn't written in either app.
+apps' glue for 1.3 and 1.4 isn't written in either app.
 
 ## In short
 
@@ -215,7 +215,7 @@ uniPEQ: idle → joining → awaiting approval (dialog) → linked ⇄ waiting f
 
 ### 4.2 Versioning
 
-Both `hello`s carry `proto: [major, minor]`, currently `[1, 3]`.
+Both `hello`s carry `proto: [major, minor]`, currently `[1, 4]`.
 
 - **1.1** adds `status.consent` and the `consent` command (the volume warning, 4.5).
 - **1.2** adds `launch` to uniPEQ's `hello` (the launch token, 2.4).
@@ -228,6 +228,9 @@ Both `hello`s carry `proto: [major, minor]`, currently `[1, 3]`.
   `unsaved`, `absentEqs` and `controls`, the `control` and `preset` values of `busy`,
   `PlanChange.channel` (4.5), and the commands `eq`, `control`, `preset-create`, `preset-rename`
   and `preset-delete`.
+- **1.4** adds `device.eqs`, the device's EQs by name (4.5). `profile` is the viewed EQ's alone,
+  which has no list of EQs for any EQ but the device's own, and `capabilities.eqs` holds bare ids,
+  so while uniPEQ viewed another EQ mGT couldn't name the rest.
 
 - **Different major:** both sides send `bye: version` with their own `proto` and close. The UI
   names the app to update: "uniPEQ is older than this site's link" or "Update modernGraphTool".
@@ -251,21 +254,21 @@ Both `hello`s carry `proto: [major, minor]`, currently `[1, 3]`.
 
 ### 4.3 Messages
 
-| Type       | Direction    | Body                                                                                                  | When                                    |
-| ---------- | ------------ | ----------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| `hello`    | both         | `proto`, `app` (`mgt`/`unipeq`), `version`, mGT: `site?`, `lastRev`, `dirty`; uniPEQ: `launch?`       | First message on every channel open     |
-| `approval` | uniPEQ → mGT | `state`: `pending` / `approved`                                                                       | After `hello`; on approval              |
-| `bye`      | both         | `reason`: `unlink` / `denied` / `version` / `timeout` / `replaced`; `proto?` (with `version`)         | Session ends                            |
-| `away`     | mGT → uniPEQ | —                                                                                                     | `pagehide`                              |
-| `ping`     | mGT → uniPEQ | `n`                                                                                                   | Every 5 s                               |
-| `pong`     | uniPEQ → mGT | `n`                                                                                                   | From the `ping` handler                 |
-| `edit`     | mGT → uniPEQ | `seq`, `ops[]`, `burst?`, `settle?`                                                                   | mGT's edits, at most every 50 ms        |
-| `eq`       | uniPEQ → mGT | `rev`, `eq`, `ack`, `by` (`mgt`/`unipeq`/`device`), `burst?`, `fresh?`                                | After every change, at most every 50 ms |
-| `device`   | uniPEQ → mGT | `null`, or `name`, `kind`, `profile`, `profileSource`, `profileId`, `identity`, `capabilities`, `eq?` | On approval and on any device change    |
-| `status`   | uniPEQ → mGT | see 4.5                                                                                               | On any change                           |
-| `cmd`      | mGT → uniPEQ | `id`, `name`, `args?`                                                                                 | Buttons in mGT                          |
-| `re`       | uniPEQ → mGT | `id`, `ok`, `code?`                                                                                   | When the command finishes               |
-| `notice`   | uniPEQ → mGT | `kind: 'paused'`, `cause`, `ms`                                                                       | Self-check (5.3)                        |
+| Type       | Direction    | Body                                                                                                          | When                                    |
+| ---------- | ------------ | ------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `hello`    | both         | `proto`, `app` (`mgt`/`unipeq`), `version`, mGT: `site?`, `lastRev`, `dirty`; uniPEQ: `launch?`               | First message on every channel open     |
+| `approval` | uniPEQ → mGT | `state`: `pending` / `approved`                                                                               | After `hello`; on approval              |
+| `bye`      | both         | `reason`: `unlink` / `denied` / `version` / `timeout` / `replaced`; `proto?` (with `version`)                 | Session ends                            |
+| `away`     | mGT → uniPEQ | —                                                                                                             | `pagehide`                              |
+| `ping`     | mGT → uniPEQ | `n`                                                                                                           | Every 5 s                               |
+| `pong`     | uniPEQ → mGT | `n`                                                                                                           | From the `ping` handler                 |
+| `edit`     | mGT → uniPEQ | `seq`, `ops[]`, `burst?`, `settle?`                                                                           | mGT's edits, at most every 50 ms        |
+| `eq`       | uniPEQ → mGT | `rev`, `eq`, `ack`, `by` (`mgt`/`unipeq`/`device`), `burst?`, `fresh?`                                        | After every change, at most every 50 ms |
+| `device`   | uniPEQ → mGT | `null`, or `name`, `kind`, `profile`, `profileSource`, `profileId`, `identity`, `capabilities`, `eq?`, `eqs?` | On approval and on any device change    |
+| `status`   | uniPEQ → mGT | see 4.5                                                                                                       | On any change                           |
+| `cmd`      | mGT → uniPEQ | `id`, `name`, `args?`                                                                                         | Buttons in mGT                          |
+| `re`       | uniPEQ → mGT | `id`, `ok`, `code?`                                                                                           | When the command finishes               |
+| `notice`   | uniPEQ → mGT | `kind: 'paused'`, `cause`, `ms`                                                                               | Self-check (5.3)                        |
 
 The shared list:
 
@@ -381,6 +384,10 @@ is what AutoEQ or loading a preset means.
   `editsSlots` and `readsBandCount`, where a missing key reads as "can't".
 - `eq` (1.3): the id of the EQ the device is viewed as, among `capabilities.eqs`. Null is its own.
   The `eq` command changes it.
+- `eqs` (1.4): the device's EQs as uniPEQ lists them (eqcaps' `profileEqs`, those its bridge
+  drives), its own first, each `{ id, name }`: `id` as in `capabilities.eqs` (null for its own),
+  `name` the data's ("SPK EQ") or null. `profile` drops that list for any EQ but the device's own,
+  so this is how mGT names them whichever is viewed. `status.absentEqs` says which are there now.
 
 Demo, guessed and experimental devices all link.
 

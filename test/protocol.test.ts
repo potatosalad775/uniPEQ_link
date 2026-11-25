@@ -151,6 +151,16 @@ describe('parseMessage', () => {
 		);
 		assert.equal(parseMessage(JSON.stringify({ t: 'hello', proto: [1], app: 'mgt' })), null);
 	});
+
+	it("passes a device with its EQs' names (1.4)", () => {
+		const eqs = [
+			{ id: null, name: null },
+			{ id: 'spk', name: 'SPK EQ' }
+		];
+		const m = parseMessage(JSON.stringify({ t: 'device', device: { name: 'Q', eq: 'spk', eqs } }));
+		assert.ok(m && m.t === 'device' && m.device);
+		assert.deepEqual(m.device.eqs, eqs);
+	});
 });
 
 const pk = (freq: number, gain = 0) => ({ type: 'PK', freq, q: 1, gain });
@@ -163,14 +173,14 @@ const eqMessage = (eq: unknown) => JSON.stringify({ t: 'eq', rev: 1, ack: 0, by:
 const editMessage = (...ops: unknown[]) => JSON.stringify({ t: 'edit', seq: 1, ops });
 const minorOf = (name: string) => COMMAND_MINOR[name as CommandName];
 
-describe('proto 1.3 versions', () => {
-	it('speaks 1.3, and shares the lower minor', () => {
-		assert.deepEqual(PROTO, [1, 3]);
-		assert.equal(sharedMinor([1, 3], [1, 0]), 0);
-		assert.equal(sharedMinor([1, 3], [1, 2]), 2);
-		assert.equal(sharedMinor([1, 3], [1, 3]), 3);
+describe('proto 1.4 versions', () => {
+	it('speaks 1.4, and shares the lower minor', () => {
+		assert.deepEqual(PROTO, [1, 4]);
+		assert.equal(sharedMinor([1, 4], [1, 0]), 0);
+		assert.equal(sharedMinor([1, 4], [1, 3]), 3);
+		assert.equal(sharedMinor([1, 4], [1, 4]), 4);
 		// A newer peer: what it added after ours stays unused.
-		assert.equal(sharedMinor([1, 3], [1, 9]), 3);
+		assert.equal(sharedMinor([1, 4], [1, 9]), 4);
 	});
 
 	it('names the minor each command came with, and COMMANDS is those names', () => {

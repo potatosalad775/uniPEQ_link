@@ -4,7 +4,7 @@
  */
 
 /** `[major, minor]`. Major: an existing message changed meaning. Minor: something was added. */
-export const PROTO = [1, 3] as const;
+export const PROTO = [1, 4] as const;
 export type Proto = readonly [major: number, minor: number];
 
 /**
@@ -284,6 +284,16 @@ export type PlanChange = (
 	| { kind: 'preamp'; wanted: number; written: number }
 ) & { channel?: Channel };
 
+/** One of the device's EQs as uniPEQ lists them (eqcaps' `profileEqs`, those its bridge drives). */
+export interface LinkEqInfo {
+	/**
+	 * Its id among `capabilities.eqs`; null for the device's own EQ, the one its profile describes.
+	 */
+	id: string | null;
+	/** The data's name for it ("SPK EQ"); null where the data gives none. */
+	name: string | null;
+}
+
 /** eqcaps' `Slot`: a preset, by the device's own number. */
 export interface LinkSlot {
 	id: number;
@@ -315,6 +325,13 @@ export interface LinkDevice {
 	 * own. Changed by the `eq` command, which brings a new `device` and a `fresh` list.
 	 */
 	eq?: string | null;
+	/**
+	 * Proto 1.4. The device's EQs, its own first, by the data's names. `profile` is only the viewed
+	 * EQ's (`eq`), and drops that list for any EQ but the device's own. `status.absentEqs` says
+	 * whether each is there now. An older uniPEQ leaves this out, which says nothing about the
+	 * device.
+	 */
+	eqs?: LinkEqInfo[];
 }
 
 export interface LinkStatus {

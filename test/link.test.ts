@@ -249,7 +249,7 @@ describe('HostLink, versions and peers', () => {
 		fake.fire('message', { t: 'hello', proto: [2, 0], app: 'unipeq', version: 'u' });
 		assert.equal(host.state, 'ended');
 		assert.deepEqual(ended, [{ reason: 'version', by: 'self', peerProto: [2, 0] }]);
-		assert.deepEqual(fake.of('bye'), [{ t: 'bye', reason: 'version', proto: [1, 3] }]);
+		assert.deepEqual(fake.of('bye'), [{ t: 'bye', reason: 'version', proto: [1, 4] }]);
 		mock.timers.tick(100);
 		assert.ok(fake.closed);
 	});
