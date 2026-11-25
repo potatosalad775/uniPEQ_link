@@ -25,7 +25,7 @@ import {
 	type Proto,
 	type Timings
 } from './protocol.ts';
-import { Emitter, LinkSession, type Peer } from './session.ts';
+import { Emitter, LinkSession, type Peer, type SessionOptions } from './session.ts';
 import { HostSync, replaceOps, type Adopt, type EditOptions } from './sync.ts';
 
 export type HostState = 'waiting' | 'connecting' | 'approval' | 'linked' | 'stalled' | 'ended';
@@ -91,6 +91,8 @@ export interface HostOptions {
 	/** For tests. */
 	proto?: Proto;
 	relayOnly?: boolean;
+	/** For tests: a session that never touches the network. */
+	session?: (options: SessionOptions) => LinkSession;
 }
 
 const STORAGE_KEY = 'peq-link:host';
@@ -131,7 +133,8 @@ export class HostLink extends Emitter<HostEvents> {
 		this.proto = options.proto ?? PROTO;
 		this.storage = options.storage === undefined ? defaultStorage() : options.storage;
 		this.resumed = peerId !== undefined;
-		this.session = new LinkSession({
+		const session = options.session ?? ((o: SessionOptions) => new LinkSession(o));
+		this.session = session({
 			server: options.server,
 			room,
 			peerId,

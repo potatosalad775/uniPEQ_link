@@ -29,7 +29,7 @@ import {
 	type Timings
 } from './protocol.ts';
 import type { CommandResult, Ended, EndReason } from './host.ts';
-import { Emitter, LinkSession, type Peer } from './session.ts';
+import { Emitter, LinkSession, type Peer, type SessionOptions } from './session.ts';
 import { AuthoritySync, type Change } from './sync.ts';
 
 export type JoinerState = 'joining' | 'approval' | 'linked' | 'waiting' | 'ended';
@@ -92,6 +92,8 @@ export interface JoinerOptions {
 	/** For tests. */
 	proto?: Proto;
 	relayOnly?: boolean;
+	/** For tests: a session that never touches the network. */
+	session?: (options: SessionOptions) => LinkSession;
 }
 
 /** Messages answered before approval. Everything else gets `approval: pending`. */
@@ -122,7 +124,8 @@ export class JoinerLink extends Emitter<JoinerEvents> {
 		this.timings = options.timings ?? TIMINGS;
 		this.proto = options.proto ?? PROTO;
 		this.foreground = options.foreground ?? true;
-		this.session = new LinkSession({
+		const session = options.session ?? ((o: SessionOptions) => new LinkSession(o));
+		this.session = session({
 			server: options.server,
 			room: options.room,
 			relayOnly: options.relayOnly,
