@@ -670,22 +670,23 @@ async function until(predicate, ms = 5000) {
 			JSON.stringify(ms6?.eq)
 		);
 
-		// A list without `right` joins the channels, and the link stays up.
+		// A list without `right` lands on both channels and leaves them apart (design §6.3).
 		const one = { filters: [pk(333), pk(444)], preamp: -1, autoPreamp: false };
+		const both = { ...one, right: { ...one } };
 		await mgt6.evaluate((eq) => window.fake.replaceAll(eq), one);
 		us6 = await waitFor(
-			'uniPEQ joins the channels',
+			'uniPEQ sets both channels',
 			unipeq6,
-			(s) => !s.eq.right && s.eq.filters[0].freq === 333
+			(s) => s.eq.right?.filters[0].freq === 333 && s.eq.filters[0].freq === 333
 		);
 		await settle();
 		ms6 = await state(mgt6);
 		check(
-			'replaceAll without right joins the channels on uniPEQ',
+			'replaceAll without right sets both channels on uniPEQ, still apart',
 			us6 &&
-				same(us6.eq, one) &&
-				same(ms6.eq, one) &&
-				us6.ops.some((o) => o.op === 'channels' && o.apart === false),
+				same(us6.eq, both) &&
+				same(ms6.eq, both) &&
+				!us6.ops.some((o) => o.op === 'channels' && o.apart === false),
 			JSON.stringify({ unipeq: us6?.eq, mgt: ms6.eq })
 		);
 		check(

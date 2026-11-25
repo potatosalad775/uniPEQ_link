@@ -151,7 +151,12 @@ export class HostLink extends Emitter<HostEvents> {
 		this.save();
 
 		this.session.on('peer', ({ peer, rejoin }) => {
-			if (!rejoin && this.current === 'waiting') this.setState('connecting');
+			if (!rejoin) {
+				// Another uniPEQ, maybe an older build: nothing above minor 0 until its `hello`.
+				this.theirs = null;
+				this.sync.minor = 0;
+				if (this.current === 'waiting') this.setState('connecting');
+			}
 			this.emit('peer', peer);
 		});
 		this.session.on('open', () => this.onOpen());
@@ -214,14 +219,20 @@ export class HostLink extends Emitter<HostEvents> {
 	edit(ops: EditOp[], options?: EditOptions): void {
 		if (this.current !== 'linked' && this.current !== 'stalled') return;
 		// A uniPEQ before 1.3 would apply a channel's op to its one list, so it never gets one. mGT
-		// shouldn't hold the channels apart then (`minor`); uniPEQ's next `eq` puts it back.
-		const known = this.minor >= 3 ? ops : ops.filter((op) => !('ch' in op) && op.op !== 'channels');
+		// shouldn't hold the channels apart then (`minor`); the `eq` that answers puts it back.
+		const known =
+			this.minor >= 3 ? ops : ops.filter((op) => op.op !== 'channels' && op.ch === undefined);
 		this.sync.edit(known, options);
+		if (known.length < ops.length) this.sync.echo();
 	}
 
-	/** Sends `eq` over whole, settled: "Send this EQ to uniPEQ", AutoEQ, a loaded preset. */
+	/**
+	 * Sends `eq` over whole, settled: "Send this EQ to uniPEQ", AutoEQ, a loaded preset. Without
+	 * `right` it lands on both channels and leaves them apart or not (design §6.3); only a resync
+	 * joins them, to make uniPEQ's EQ exactly mGT's.
+	 */
 	replaceAll(eq: LinkEq): void {
-		this.edit(replaceOps(eq, this.minor), { settle: true });
+		this.edit(replaceOps(eq, eq.right ? this.minor : 0), { settle: true });
 	}
 
 	/** Effects arrive as `eq`, `status` and `device`, not in the result. */

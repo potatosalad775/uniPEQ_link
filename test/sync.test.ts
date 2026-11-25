@@ -136,6 +136,10 @@ function pair(initial: LinkEq = flat(4)) {
 			mgt = applyOps(mgt, ops);
 			host.edit(ops, options);
 		},
+		/** mGT changes its own list without sending: what `HostLink.edit` holds back. */
+		mgtLocal(ops: EditOp[]) {
+			mgt = applyOps(mgt, ops);
+		},
 		/** uniPEQ edits its own list. */
 		unipeqEdit(ops: EditOp[]) {
 			unipeq = applyOps(unipeq, ops);
@@ -191,6 +195,25 @@ describe('HostSync ↔ AuthoritySync', () => {
 		t.deliver();
 		assert.deepEqual(t.unipeq, t.mgt);
 		assert.equal(t.adopted.length, 0);
+		assert.equal(t.host.dirty, false);
+	});
+
+	it('puts back a local change uniPEQ was never sent, with an empty unsettled edit', () => {
+		const t = pair();
+		const before = t.unipeq;
+		// mGT split its list, which a uniPEQ before 1.3 isn't sent (`HostLink.edit`).
+		t.mgtLocal([{ op: 'channels', apart: true }]);
+		t.host.edit([]);
+		assert.equal(t.toUnipeq.length, 0);
+		t.host.echo();
+		assert.deepEqual(
+			t.toUnipeq.map((m) => [m.ops, m.settle]),
+			[[[], undefined]]
+		);
+		t.deliver();
+		assert.deepEqual(t.mgt, before);
+		assert.deepEqual(t.unipeq, before);
+		assert.equal(t.settles.length, 0);
 		assert.equal(t.host.dirty, false);
 	});
 

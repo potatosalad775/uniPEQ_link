@@ -580,7 +580,7 @@ function isEq(value: unknown): value is LinkEq {
 
 function isEditOp(value: unknown): value is EditOp {
 	if (!isRecord(value)) return false;
-	// An op for a channel this side can't name would land on both, so it isn't kept.
+	// An op for a channel this side can't name would land on both, so its edit isn't kept.
 	if (value.ch !== undefined && value.ch !== 'left' && value.ch !== 'right') return false;
 	switch (value.op) {
 		case 'channels':

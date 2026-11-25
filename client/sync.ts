@@ -178,6 +178,8 @@ export class HostSync {
 	private pending: EditOp[] = [];
 	private burst: string | undefined;
 	private settle = false;
+	/** An edit goes out even with no ops, so uniPEQ answers with an `eq` (`echo`). */
+	private echoing = false;
 	/** The last `eq` adopted, or null before the first. */
 	private lastRev: number | null = null;
 	/** The next `eq` is the snapshot after a channel open. */
@@ -218,6 +220,15 @@ export class HostSync {
 		if (this.pending.length || this.settle) this.throttle.request();
 	}
 
+	/**
+	 * mGT changed its list in a way uniPEQ won't be sent: an edit goes out anyway, empty if need
+	 * be, and the `eq` that answers it puts mGT's list back.
+	 */
+	echo(): void {
+		this.echoing = true;
+		this.throttle.request();
+	}
+
 	/** The channel opened: the next `eq` is uniPEQ's snapshot. */
 	beginResync(): void {
 		this.resyncing = true;
@@ -249,6 +260,7 @@ export class HostSync {
 			const keepMine = this.dirty && message.rev === this.lastRev;
 			this.pending = [];
 			this.settle = false;
+			this.echoing = false;
 			this.acked = this.seq;
 			if (keepMine) {
 				// Nothing changed in uniPEQ while apart: mGT's list goes over whole.
@@ -270,10 +282,11 @@ export class HostSync {
 	stop(): void {
 		this.throttle.cancel();
 		this.pending = [];
+		this.echoing = false;
 	}
 
 	private flush(): void {
-		if (!this.pending.length && !this.settle) return;
+		if (!this.pending.length && !this.settle && !this.echoing) return;
 		const message: MessageOf<'edit'> = { t: 'edit', seq: this.seq + 1, ops: this.pending };
 		if (this.burst !== undefined) message.burst = this.burst;
 		if (this.settle) message.settle = true;
@@ -282,6 +295,7 @@ export class HostSync {
 		this.seq++;
 		this.pending = [];
 		this.settle = false;
+		this.echoing = false;
 	}
 }
 
