@@ -4,8 +4,16 @@
  */
 
 /** `[major, minor]`. Major: an existing message changed meaning. Minor: something was added. */
-export const PROTO = [1, 2] as const;
+export const PROTO = [1, 3] as const;
 export type Proto = readonly [major: number, minor: number];
+
+/**
+ * The minor both sides have, given the same major: what was added after it stays unused (design
+ * §4.2). `HostLink.minor` and `JoinerLink.minor` hold it for the session.
+ */
+export function sharedMinor(mine: Proto, theirs: Proto): number {
+	return Math.min(mine[1], theirs[1]);
+}
 
 export const CHANNEL_LABEL = 'peq-link';
 /** Same limit as the signaling relay. The largest message, `device`, is a few KB. */
@@ -197,8 +205,10 @@ export interface Filter {
 	gain: number;
 }
 
-/** The shared list (design §4.3). */
-export interface LinkEq {
+export type Channel = 'left' | 'right';
+
+/** One channel's list and preamp. */
+export interface LinkChannel {
 	/** In band (slot) order. */
 	filters: Filter[];
 	/** The value in effect: derived while `autoPreamp` is on. */
@@ -206,20 +216,40 @@ export interface LinkEq {
 	autoPreamp: boolean;
 }
 
+/** The shared list (design §4.3). */
+export interface LinkEq extends LinkChannel {
+	/**
+	 * Proto 1.3. The channels are apart: this is the right one's, and the fields above are the
+	 * left's, as in eqcaps' `PullResult`. Absent while one list drives both. Never sent to an mGT
+	 * before 1.3, which gets the one list its edits land on.
+	 */
+	right?: LinkChannel;
+}
+
+/**
+ * `ch` is proto 1.3. Without it an op sets both channels, apart or not. With it the op sets that
+ * channel, and is dropped while the channels aren't apart: the EQ changed shape under it.
+ */
 export type EditOp =
 	/** Replace band `i`. Past the end of the list it's dropped: the list changed shape under it. */
-	| { op: 'band'; i: number; filter: Filter }
+	| { op: 'band'; i: number; filter: Filter; ch?: Channel }
 	/** Replace the whole list. */
-	| { op: 'list'; filters: Filter[] }
+	| { op: 'list'; filters: Filter[]; ch?: Channel }
 	/** A fixed preamp; turns Auto off. */
-	| { op: 'preamp'; db: number }
-	| { op: 'auto-preamp'; on: boolean };
+	| { op: 'preamp'; db: number; ch?: Channel }
+	| { op: 'auto-preamp'; on: boolean; ch?: Channel }
+	/**
+	 * Proto 1.3. `apart: true` sets the channels apart, the right starting as a copy of the left;
+	 * uniPEQ refuses it for a device that can't drive them apart. `apart: false` makes `keep`'s list
+	 * (default left) both channels'. Either is a no-op when the channels are that way already.
+	 */
+	| { op: 'channels'; apart: boolean; keep?: Channel };
 
 export function filtersEqual(a: Filter, b: Filter): boolean {
 	return a.type === b.type && a.freq === b.freq && a.q === b.q && a.gain === b.gain;
 }
 
-export function eqEqual(a: LinkEq, b: LinkEq): boolean {
+function channelsEqual(a: LinkChannel, b: LinkChannel): boolean {
 	return (
 		a.preamp === b.preamp &&
 		a.autoPreamp === b.autoPreamp &&
@@ -228,10 +258,20 @@ export function eqEqual(a: LinkEq, b: LinkEq): boolean {
 	);
 }
 
+/** Apart with equal channels isn't one list for both: linking is an edit of its own. */
+export function eqEqual(a: LinkEq, b: LinkEq): boolean {
+	if (!channelsEqual(a, b)) return false;
+	if (!a.right || !b.right) return a.right === b.right;
+	return channelsEqual(a.right, b.right);
+}
+
 // ── Device and status (design §4.5) ──────────────────────────────────────────────────────────
 
-/** mGT's `PlanChange`; uniPEQ's `push-plan.ts` is a copy of mGT's. */
-export type PlanChange =
+/**
+ * mGT's `PlanChange`; uniPEQ's `push-plan.ts` is a copy of mGT's. `channel` is proto 1.3: the
+ * channel the change is in, on a write that sends the channels apart; absent when it's in both.
+ */
+export type PlanChange = (
 	| {
 			kind: 'field';
 			/** 1-based band number, as the band list shows it. */
@@ -241,18 +281,40 @@ export type PlanChange =
 			written: number | string;
 	  }
 	| { kind: 'dropped'; band: number }
-	| { kind: 'preamp'; wanted: number; written: number };
+	| { kind: 'preamp'; wanted: number; written: number }
+) & { channel?: Channel };
+
+/** eqcaps' `Slot`: a preset, by the device's own number. */
+export interface LinkSlot {
+	id: number;
+	name: string;
+	bypass?: boolean;
+	writable?: boolean;
+}
 
 export interface LinkDevice {
 	name: string;
 	kind: 'hid' | 'serial' | 'ble' | 'demo';
-	/** The full eqcaps profile, so mGT fits and bounds AutoEQ exactly as uniPEQ does. */
+	/**
+	 * The full eqcaps profile, so mGT fits and bounds AutoEQ exactly as uniPEQ does. Of the EQ the
+	 * device is viewed as (`eq`), as eqcaps' `eqProfile` gives it.
+	 */
 	profile: unknown;
 	profileSource: 'device' | 'group' | 'guess' | 'demo';
 	profileId: string | null;
 	identity: unknown;
-	/** mGT's `PeqCapabilities` subset, including `slots`. */
+	/**
+	 * mGT's `PeqCapabilities` subset, including `slots`: for a device that keeps a list of presets,
+	 * the room it has, and `status.slots` is the list. From proto 1.3 also eqcaps' `controls`,
+	 * `eqs`, `perChannel`, `listsSlots`, `editsSlots` and `readsBandCount`, where a missing key
+	 * reads as "can't".
+	 */
 	capabilities: unknown;
+	/**
+	 * Proto 1.3. The id of the EQ the device is viewed as, among `capabilities.eqs`; null for its
+	 * own. Changed by the `eq` command, which brings a new `device` and a `fresh` list.
+	 */
+	eq?: string | null;
 }
 
 export interface LinkStatus {
@@ -264,7 +326,8 @@ export interface LinkStatus {
 	activeSlot: number | null;
 	deviceSlot: number | null;
 	eqEnabled: boolean | null;
-	busy: 'read' | 'write' | 'switch' | 'connect' | null;
+	/** `control` and `preset` are proto 1.3: an mGT before it is sent null for them. */
+	busy: 'read' | 'write' | 'switch' | 'connect' | 'control' | 'preset' | null;
 	inSync: boolean | null;
 	unwritten: boolean;
 	needsReconnect: boolean;
@@ -277,6 +340,33 @@ export interface LinkStatus {
 	 * answers it, on either side (`consent`). Absent from a 1.0 uniPEQ.
 	 */
 	consent?: boolean;
+	/**
+	 * Proto 1.3. The presets as they are now, under the device's own names, for a device that keeps
+	 * a list (`capabilities.listsSlots`): `activeSlot` and `deviceSlot` are ids in it. Absent
+	 * elsewhere, where `capabilities.slots` is the list.
+	 */
+	slots?: LinkSlot[];
+	/**
+	 * Proto 1.3. The device is on no preset: its EQ changed since one was loaded. `deviceSlot` is
+	 * null then, as it is when the device can't say.
+	 */
+	unsaved?: boolean;
+	/** Proto 1.3. The EQs in `capabilities.eqs` the device's mode lacks now, by id. */
+	absentEqs?: string[];
+	/**
+	 * Proto 1.3. Each of `capabilities.controls` by id, in the device's own numbers; null for one
+	 * the device lacks now (its firmware, its mode, another control's value).
+	 */
+	controls?: Record<string, number | null>;
+}
+
+/**
+ * `status` as an mGT on `minor` knows it: a value a later minor added to an existing field falls
+ * back to what that mGT shows for "none". New fields need nothing, since they are ignored.
+ */
+export function statusFor(status: LinkStatus, minor: number): LinkStatus {
+	const late = status.busy === 'control' || status.busy === 'preset';
+	return minor < 3 && late ? { ...status, busy: null } : status;
 }
 
 // ── Messages (design §4.3) ───────────────────────────────────────────────────────────────────
@@ -285,18 +375,41 @@ export type ByeReason = 'unlink' | 'denied' | 'version' | 'timeout' | 'replaced'
 export type Editor = 'mgt' | 'unipeq' | 'device';
 export type PauseCause = 'frozen' | 'hidden' | 'stopped';
 
-export const COMMANDS = [
-	'read',
-	'write',
-	'review',
-	'switch',
-	'fit',
-	'reconnect',
-	'auto-write',
-	'consent'
-];
 export type CommandName =
-	'read' | 'write' | 'review' | 'switch' | 'fit' | 'reconnect' | 'auto-write' | 'consent';
+	| 'read'
+	| 'write'
+	| 'review'
+	| 'switch'
+	| 'fit'
+	| 'reconnect'
+	| 'auto-write'
+	| 'consent'
+	| 'eq'
+	| 'control'
+	| 'preset-create'
+	| 'preset-rename'
+	| 'preset-delete';
+
+/**
+ * The minor each command came with. mGT doesn't send one uniPEQ's minor lacks: `command` answers
+ * `unsupported` itself, which is also what an older uniPEQ would say.
+ */
+export const COMMAND_MINOR: Record<CommandName, number> = {
+	read: 0,
+	write: 0,
+	review: 0,
+	switch: 0,
+	fit: 0,
+	reconnect: 0,
+	'auto-write': 0,
+	consent: 1,
+	eq: 3,
+	control: 3,
+	'preset-create': 3,
+	'preset-rename': 3,
+	'preset-delete': 3
+};
+export const COMMANDS: readonly string[] = Object.keys(COMMAND_MINOR);
 
 export interface CommandArgs {
 	read: undefined;
@@ -313,6 +426,25 @@ export interface CommandArgs {
 	 * also turns the warning off for later connections (uniPEQ's setting, kept in one place).
 	 */
 	consent: { accept: boolean; quiet?: boolean };
+	/**
+	 * Proto 1.3: views the device as another of `capabilities.eqs`, null for its own, and reads it.
+	 * A new `device` and a `fresh` list follow.
+	 */
+	eq: { id: string | null };
+	/**
+	 * Proto 1.3: writes one of `capabilities.controls`, in the device's own numbers. The value
+	 * arrives in `status.controls`; a control that makes the device reconnect sets `needsReconnect`.
+	 */
+	control: { id: string; value: number };
+	/**
+	 * Proto 1.3, for a device with `capabilities.editsSlots`. The list arrives in `status.slots`.
+	 * A new preset is empty and goes after the last; without `name` the device names it.
+	 */
+	'preset-create': { name?: string };
+	/** Refused (`invalid-request`) when the device can't store `name`, rather than shortened. */
+	'preset-rename': { slot: number; name: string };
+	/** The presets after it move down by one, so every id mGT holds is stale until `status`. */
+	'preset-delete': { slot: number };
 }
 
 export interface HelloMessage {
@@ -431,7 +563,7 @@ function isFilter(value: unknown): value is Filter {
 	);
 }
 
-function isEq(value: unknown): value is LinkEq {
+function isChannelEq(value: unknown): value is LinkChannel {
 	return (
 		isRecord(value) &&
 		Array.isArray(value.filters) &&
@@ -441,9 +573,21 @@ function isEq(value: unknown): value is LinkEq {
 	);
 }
 
+function isEq(value: unknown): value is LinkEq {
+	if (!isRecord(value)) return false;
+	return isChannelEq(value) && (value.right === undefined || isChannelEq(value.right));
+}
+
 function isEditOp(value: unknown): value is EditOp {
 	if (!isRecord(value)) return false;
+	// An op for a channel this side can't name would land on both, so it isn't kept.
+	if (value.ch !== undefined && value.ch !== 'left' && value.ch !== 'right') return false;
 	switch (value.op) {
+		case 'channels':
+			return (
+				typeof value.apart === 'boolean' &&
+				(value.keep === undefined || value.keep === 'left' || value.keep === 'right')
+			);
 		case 'band':
 			return Number.isInteger(value.i) && (value.i as number) >= 0 && isFilter(value.filter);
 		case 'list':

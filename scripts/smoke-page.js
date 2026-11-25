@@ -8,6 +8,7 @@ const pk = (freq, gain = 0) => ({ type: 'PK', freq, q: 1, gain });
 window.setupHost = (server, { resume = false, eq, proto, timings } = {}) => {
 	const state = {
 		eq: eq ?? { filters: [pk(100), pk(200), pk(300)], preamp: 0, autoPreamp: false },
+		hello: null,
 		states: [],
 		adopted: [],
 		device: undefined,
@@ -24,6 +25,8 @@ window.setupHost = (server, { resume = false, eq, proto, timings } = {}) => {
 	};
 	const link = (resume && PeqLink.resumeHost(options)) || PeqLink.startHost(options);
 	link.on('state', (s) => state.states.push(s));
+	// `minor` is read inside the event: it must already be set when `hello` is announced.
+	link.on('hello', (h) => (state.hello = { proto: h.proto, minor: link.minor }));
 	link.on('eq', (adopt) => {
 		state.eq = adopt.eq;
 		state.adopted.push({ by: adopt.by, initial: adopt.initial, fresh: adopt.fresh });
@@ -37,22 +40,34 @@ window.setupHost = (server, { resume = false, eq, proto, timings } = {}) => {
 		edit(ops, options) {
 			state.eq = PeqLink.applyOps(state.eq, ops);
 			link.edit(ops, options);
+		},
+		replaceAll(eq) {
+			state.eq = eq;
+			link.replaceAll(eq);
 		}
 	};
 	return link.room;
 };
 
-/** uniPEQ with a fake device that counts writes. */
-window.setupJoiner = (server, room, { proto, timings, foreground = true } = {}) => {
+/**
+ * uniPEQ with a fake device that counts writes. `eq` may carry `right` (channels apart). It
+ * records the ops it received (`ops`), the commands that reached its handler (`commands`) and
+ * keeps the device's `controls` and `busy`, which its status reports.
+ */
+window.setupJoiner = (server, room, { eq, proto, timings, foreground = true } = {}) => {
 	const state = {
-		eq: {
+		eq: eq ?? {
 			filters: [pk(1000, 1), pk(2000, 2), pk(3000, 3), pk(4000, 4)],
 			preamp: -4,
 			autoPreamp: false
 		},
 		applied: 0,
 		writes: 0,
+		ops: [],
 		commands: [],
+		controls: {},
+		busy: null,
+		hello: null,
 		requests: [],
 		states: [],
 		ended: null
@@ -82,7 +97,8 @@ window.setupJoiner = (server, room, { proto, timings, foreground = true } = {}) 
 				activeSlot: null,
 				deviceSlot: null,
 				eqEnabled: true,
-				busy: null,
+				busy: state.busy,
+				controls: state.controls,
 				inSync: true,
 				unwritten: false,
 				needsReconnect: false,
@@ -92,6 +108,7 @@ window.setupJoiner = (server, room, { proto, timings, foreground = true } = {}) 
 			}),
 			edit(ops, { settle }) {
 				state.applied += ops.length;
+				state.ops.push(...ops);
 				const next = PeqLink.applyOps(state.eq, ops);
 				const changed = !PeqLink.eqEqual(next, state.eq);
 				state.eq = next;
@@ -99,15 +116,21 @@ window.setupJoiner = (server, room, { proto, timings, foreground = true } = {}) 
 				if (settle) state.writes++;
 				return changed;
 			},
-			async command(name) {
+			async command(name, args) {
 				state.commands.push(name);
 				if (name === 'write') state.writes++;
+				if (name === 'control') {
+					state.controls = { ...state.controls, [args.id]: args.value };
+					// A command's effect arrives in `status`, which uniPEQ sends itself.
+					link.sendStatus();
+				}
 				return { ok: true };
 			}
 		}
 	});
 	link.on('request', (r) => state.requests.push(r));
 	link.on('state', (s) => state.states.push(s));
+	link.on('hello', (h) => (state.hello = { proto: h.proto, minor: link.minor }));
 	link.on('ended', (e) => (state.ended = e));
 	window.fake = {
 		link,
@@ -115,6 +138,11 @@ window.setupJoiner = (server, room, { proto, timings, foreground = true } = {}) 
 		edit(ops) {
 			state.eq = PeqLink.applyOps(state.eq, ops);
 			link.changed({ by: 'unipeq' });
+		},
+		/** The device is busy with `busy` (or not): status goes out. */
+		busy(busy) {
+			state.busy = busy;
+			link.sendStatus();
 		}
 	};
 };

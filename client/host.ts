@@ -6,10 +6,12 @@
  */
 import { LivenessClock } from './liveness.ts';
 import {
+	COMMAND_MINOR,
 	PROTO,
 	TIMINGS,
 	newLaunchToken,
 	newRoomCode,
+	sharedMinor,
 	type ByeReason,
 	type CommandArgs,
 	type CommandName,
@@ -41,7 +43,10 @@ export interface Ended {
 
 export interface CommandResult {
 	ok: boolean;
-	/** uniPEQ's code (an eqcaps BridgeError code, `unsupported`, …), or `timeout`, `not-linked`. */
+	/**
+	 * uniPEQ's code (an eqcaps BridgeError code, `unsupported`, …), or `timeout`, `not-linked`.
+	 * `unsupported` is also this side's answer for a command uniPEQ's minor lacks.
+	 */
 	code?: string;
 }
 
@@ -100,6 +105,7 @@ export class HostLink extends Emitter<HostEvents> {
 	 */
 	readonly launch: string;
 	private launched = false;
+	private theirs: Proto | null = null;
 	private readonly options: HostOptions;
 	private readonly timings: Timings;
 	private readonly proto: Proto;
@@ -174,6 +180,20 @@ export class HostLink extends Emitter<HostEvents> {
 		return this.launched;
 	}
 
+	/** uniPEQ's `proto`, once its `hello` arrived. */
+	get peerProto(): Proto | null {
+		return this.theirs;
+	}
+
+	/**
+	 * The minor both sides have (design §4.2), 0 before uniPEQ's `hello`. What a later minor added
+	 * is absent from an older uniPEQ's messages, which says nothing about the device: check this
+	 * before reading "no controls" or "one EQ" from a missing field.
+	 */
+	get minor(): number {
+		return this.theirs ? sharedMinor(this.proto, this.theirs) : 0;
+	}
+
 	get device(): LinkDevice | null {
 		return this.latestDevice;
 	}
@@ -192,12 +212,16 @@ export class HostLink extends Emitter<HostEvents> {
 	 * list comes from uniPEQ (or from `replaceAll`, when the user picks this side's).
 	 */
 	edit(ops: EditOp[], options?: EditOptions): void {
-		if (this.current === 'linked' || this.current === 'stalled') this.sync.edit(ops, options);
+		if (this.current !== 'linked' && this.current !== 'stalled') return;
+		// A uniPEQ before 1.3 would apply a channel's op to its one list, so it never gets one. mGT
+		// shouldn't hold the channels apart then (`minor`); uniPEQ's next `eq` puts it back.
+		const known = this.minor >= 3 ? ops : ops.filter((op) => !('ch' in op) && op.op !== 'channels');
+		this.sync.edit(known, options);
 	}
 
 	/** Sends `eq` over whole, settled: "Send this EQ to uniPEQ", AutoEQ, a loaded preset. */
 	replaceAll(eq: LinkEq): void {
-		this.edit(replaceOps(eq), { settle: true });
+		this.edit(replaceOps(eq, this.minor), { settle: true });
 	}
 
 	/** Effects arrive as `eq`, `status` and `device`, not in the result. */
@@ -207,6 +231,9 @@ export class HostLink extends Emitter<HostEvents> {
 	): Promise<CommandResult> {
 		if (this.current !== 'linked' && this.current !== 'stalled')
 			return Promise.resolve({ ok: false, code: 'not-linked' });
+		// `?? 0`: a name this client doesn't know is left to uniPEQ to refuse.
+		if ((COMMAND_MINOR[name] ?? 0) > this.minor)
+			return Promise.resolve({ ok: false, code: 'unsupported' });
 		const id = this.nextCommand++;
 		return new Promise((resolve) => {
 			const timer = setTimeout(() => {
@@ -248,6 +275,8 @@ export class HostLink extends Emitter<HostEvents> {
 					this.end('version', 'self', message.proto);
 					return;
 				}
+				this.theirs = message.proto;
+				this.sync.minor = this.minor;
 				this.launched = message.launch === this.launch;
 				this.emit('hello', message);
 				break;

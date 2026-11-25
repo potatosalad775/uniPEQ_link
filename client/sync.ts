@@ -9,8 +9,10 @@
 import {
 	eqEqual,
 	TIMINGS,
+	type Channel,
 	type EditOp,
 	type Editor,
+	type LinkChannel,
 	type LinkEq,
 	type MessageOf
 } from './protocol.ts';
@@ -51,35 +53,51 @@ export class Throttle {
 }
 
 /**
- * The ops as one list op sequence that sets `eq` outright: what a resync or "Send this EQ to
- * uniPEQ" sends.
+ * The ops that set `eq` outright: what a resync or "Send this EQ to uniPEQ" sends. For a uniPEQ on
+ * `minor` 3 or later they also set whether the channels are apart; an older one has one list.
  */
-export function replaceOps(eq: LinkEq): EditOp[] {
-	return [
-		{ op: 'list', filters: eq.filters },
-		eq.autoPreamp ? { op: 'auto-preamp', on: true } : { op: 'preamp', db: eq.preamp }
-	];
+export function replaceOps(eq: LinkEq, minor = 0): EditOp[] {
+	const channel = (from: LinkChannel, ch?: Channel): EditOp[] => {
+		const to = ch ? { ch } : {};
+		return [
+			{ op: 'list', filters: from.filters, ...to },
+			from.autoPreamp
+				? { op: 'auto-preamp', on: true, ...to }
+				: { op: 'preamp', db: from.preamp, ...to }
+		];
+	};
+	if (minor < 3) return channel(eq);
+	if (!eq.right) return [{ op: 'channels', apart: false }, ...channel(eq)];
+	return [{ op: 'channels', apart: true }, ...channel(eq, 'left'), ...channel(eq.right, 'right')];
 }
 
 /**
- * Adds `op` to pending ops, dropping the ones it supersedes. Order only matters between a `list`
- * and the bands before it, and a `list` drops those.
+ * Adds `op` to pending ops, dropping the ones it supersedes: the same kind for the same channel,
+ * or for any channel when `op` names none. Order only matters between a `list` and the bands
+ * before it, which a `list` drops, and around a `channels` op: joining or splitting changes what
+ * the ops before it did, so nothing before the last one is dropped.
  */
 export function mergeOp(pending: EditOp[], op: EditOp): EditOp[] {
-	const kept = pending.filter((old) => {
+	let from = pending.length;
+	while (from > 0 && pending[from - 1].op !== 'channels') from--;
+	const covers = (old: { ch?: Channel }, ch: Channel | undefined): boolean =>
+		ch === undefined || old.ch === ch;
+	const superseded = (old: EditOp): boolean => {
 		switch (op.op) {
 			case 'list':
-				return old.op !== 'list' && old.op !== 'band';
+				return (old.op === 'list' || old.op === 'band') && covers(old, op.ch);
 			case 'band':
-				return !(old.op === 'band' && old.i === op.i);
+				return old.op === 'band' && old.i === op.i && covers(old, op.ch);
 			case 'preamp':
+				return (old.op === 'preamp' || old.op === 'auto-preamp') && covers(old, op.ch);
 			case 'auto-preamp':
-				return old.op !== 'preamp' && old.op !== 'auto-preamp';
+				// Not a `preamp` before it: with Auto off again, that value is the one in effect.
+				return old.op === 'auto-preamp' && covers(old, op.ch);
 			default:
-				return true;
+				return false;
 		}
-	});
-	return [...kept, op];
+	};
+	return [...pending.filter((old, i) => i < from || !superseded(old)), op];
 }
 
 /**
@@ -91,26 +109,44 @@ export function applyOps(
 	ops: EditOp[],
 	derivePreamp: (filters: LinkEq['filters']) => number = () => 0
 ): LinkEq {
-	let { filters, preamp, autoPreamp } = eq;
+	let left: LinkChannel = { filters: eq.filters, preamp: eq.preamp, autoPreamp: eq.autoPreamp };
+	let right: LinkChannel | null = eq.right ?? null;
+	const set = (ch: Channel | undefined, change: (channel: LinkChannel) => LinkChannel): void => {
+		// A channel's op while one list drives both: dropped.
+		if (ch !== undefined && !right) return;
+		if (ch !== 'right') left = change(left);
+		if (ch !== 'left' && right) right = change(right);
+	};
 	for (const op of ops) {
 		switch (op.op) {
 			case 'band':
-				if (op.i < filters.length) filters = filters.map((f, i) => (i === op.i ? op.filter : f));
+				set(op.ch, (c) =>
+					op.i < c.filters.length
+						? { ...c, filters: c.filters.map((f, i) => (i === op.i ? op.filter : f)) }
+						: c
+				);
 				break;
 			case 'list':
-				filters = op.filters;
+				set(op.ch, (c) => ({ ...c, filters: op.filters }));
 				break;
 			case 'preamp':
-				preamp = op.db;
-				autoPreamp = false;
+				set(op.ch, (c) => ({ ...c, preamp: op.db, autoPreamp: false }));
 				break;
 			case 'auto-preamp':
-				autoPreamp = op.on;
+				set(op.ch, (c) => ({ ...c, autoPreamp: op.on }));
+				break;
+			case 'channels':
+				if (op.apart) right ??= left;
+				else if (right) {
+					if (op.keep === 'right') left = right;
+					right = null;
+				}
 				break;
 		}
 	}
-	if (autoPreamp) preamp = derivePreamp(filters);
-	return { filters, preamp, autoPreamp };
+	const derived = (c: LinkChannel): LinkChannel =>
+		c.autoPreamp ? { ...c, preamp: derivePreamp(c.filters) } : c;
+	return right ? { ...derived(left), right: derived(right) } : derived(left);
 }
 
 // ── mGT ──────────────────────────────────────────────────────────────────────────────────────
@@ -146,6 +182,8 @@ export class HostSync {
 	private lastRev: number | null = null;
 	/** The next `eq` is the snapshot after a channel open. */
 	private resyncing = false;
+	/** The session's minor (`sharedMinor`), once uniPEQ's `hello` arrived: what a resync may send. */
+	minor = 0;
 	private readonly throttle: Throttle;
 	private readonly send: (message: MessageOf<'edit'>) => boolean;
 	/** mGT's list as it is now, including edits not yet acknowledged. */
@@ -214,7 +252,7 @@ export class HostSync {
 			this.acked = this.seq;
 			if (keepMine) {
 				// Nothing changed in uniPEQ while apart: mGT's list goes over whole.
-				this.edit(replaceOps(this.local()), { settle: true });
+				this.edit(replaceOps(this.local(), this.minor), { settle: true });
 				return null;
 			}
 			// Otherwise uniPEQ's list wins, even if mGT changed things too.

@@ -5,8 +5,9 @@ app: `../modernGraphTool`) with **uniPEQ** (Capacitor app, web and Android: `../
 WebRTC DataChannel; this repo's Cloudflare Worker only introduces them. The link is a one-time
 session, like a call: when it ends, both sides forget it.
 
-**Status (2026-10-12): building.** This repo's part is done: `client/` is tagged (latest `v1.1.0`: `webLink`), and the
-Worker is deployed at `link.unipeq.com`. Next are uniPEQ's native service and app glue (design §9). The platform checks on a real phone,
+**Status (2026-11-25): building.** This repo's part is done: `client/` is tagged (latest `v1.4.0`: protocol 1.3, several
+EQs, channels apart, device controls and presets), and the Worker is deployed at `link.unipeq.com`. Next are uniPEQ's
+native service and the apps' glue, 1.3's included (design §9). The platform checks on a real phone,
 their answers and the design rules they lead to are in [docs/phase-0.md](docs/phase-0.md). Pairing,
 the wire protocol, uniPEQ's link service and mGT's side are in [docs/design.md](docs/design.md).
 
@@ -14,7 +15,8 @@ the wire protocol, uniPEQ's link service and mGT's side are in [docs/design.md](
 
 ```
 client/              The reference client both apps install (`peq-link/client`): protocol, session,
-                     sync, liveness, host (mGT), joiner (uniPEQ). TypeScript source, no deps
+                     sync, liveness, host (mGT), joiner (uniPEQ), `index.ts` (the entry that
+                     re-exports them). TypeScript source, no deps
 test/                Unit tests for client/ (`npm test`)
 src/worker.ts        Routes /api/rooms/<code>?peer=<uuid> (WebSocket) to the room's Durable Object,
                      and /l/<code> to the landing page
@@ -61,14 +63,18 @@ deploy`. Relay credentials: `npx wrangler secret put TURN_KEY_ID` / `TURN_KEY_AP
 - **A close before the WebSocket handshake completes is dropped** (seen in workerd), so a full room
   is answered with `{ type: 'error', code: 'room-full' }` on a plain, non-hibernating socket, and
   the client closes. Sockets without a peer attachment never count as peers (`Room.sockets()`).
-- **The room code alphabet lives in three places**: `client/protocol.ts` (which the Worker and
-  the smoke test import), `ROOM_ALPHABET` in `public/probe/probe.js` and the join regex in
-  `public/probe/index.html`.
+- **The room code alphabet lives in four places**: `client/protocol.ts` (which the Worker and
+  the smoke test import), `ROOM_ALPHABET` in `public/probe/probe.js`, the join regex in
+  `public/probe/index.html` and `ROOM` in `scripts/android-link-probe.mjs`.
 - **`client/` compiles under both apps' settings**: strict, DOM lib, no Node types, `.ts`
   imports, erasable syntax only (no enums, no constructor parameter properties), checked by
   `tsconfig.client.json`. It ships as source, so no build step and no dependencies.
 - **A change to `client/` gets a version bump and a `vX.Y.Z` tag**; a wire change also bumps
   `PROTO` (major when an existing message changes meaning).
+- **Both sides use `min(minor)`** (`sharedMinor`, `.minor`). A value added to an existing field of
+  `status` needs a fallback in `statusFor`; a new command needs its minor in `COMMAND_MINOR`,
+  so mGT never sends it to a uniPEQ that lacks it. A field an older peer omits says nothing
+  about the device: check `minor` first (design §4.2).
 - **`android-debug/` is never committed to uniPEQ.** It goes into uniPEQ's debug source set only
   through `npm run overlay:apply`, which marks the directory so `overlay:remove` can't delete
   anything else.

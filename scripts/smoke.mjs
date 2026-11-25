@@ -257,6 +257,7 @@ async function until(predicate, ms = 5000) {
 		return null;
 	}
 	const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+	const pk = (freq, gain = 0) => ({ type: 'PK', freq, q: 1, gain });
 
 	try {
 		// Handshake, approval gating, approval.
@@ -314,6 +315,20 @@ async function until(predicate, ms = 5000) {
 			same(m?.adopted, [{ by: 'unipeq', initial: true, fresh: false }])
 		);
 
+		// Both on the default proto: each side's minor is the newest, and set by `hello`.
+		const proto = await mgt.evaluate(() => [...PeqLink.PROTO]);
+		const seen = await Promise.all(
+			[mgt, unipeq].map((p) =>
+				p.evaluate(() => ({ minor: window.fake.link.minor, peerProto: window.fake.link.peerProto }))
+			)
+		);
+		check(
+			'on the default proto both sides share the newest minor and know the other proto',
+			seen.every((x) => x.minor === proto[1] && same(x.peerProto, proto)) &&
+				[m, u].every((x) => x?.hello?.minor === proto[1] && same(x.hello.proto, proto)),
+			JSON.stringify({ proto, seen, hello: [m?.hello, u?.hello] })
+		);
+
 		// Concurrent edits: mGT drags band 0 while uniPEQ edits band 2.
 		await Promise.all([
 			mgt.evaluate(async () => {
@@ -358,6 +373,22 @@ async function until(predicate, ms = 5000) {
 			'commands are answered, unknown ones as unsupported',
 			write.ok && !unknown.ok && unknown.code === 'unsupported',
 			JSON.stringify([write, unknown])
+		);
+
+		// A 1.3 command: it reaches uniPEQ's handler, and its effect comes back in `status`.
+		const control = await mgt.evaluate(() =>
+			window.fake.link.command('control', { id: 'gain', value: -3 })
+		);
+		m = await waitFor(
+			'mGT sees the control in status',
+			mgt,
+			(s) => s.status?.controls?.gain === -3
+		);
+		u = await state(unipeq);
+		check(
+			'a 1.3 command round trip: control reaches uniPEQ and returns in status',
+			control.ok && m?.status.controls.gain === -3 && u.controls.gain === -3,
+			JSON.stringify({ control, mgt: m?.status.controls, unipeq: u.controls })
 		);
 
 		// Resync after `fresh`: uniPEQ's connection dies and its signaling drops. mGT keeps
@@ -484,6 +515,185 @@ async function until(predicate, ms = 5000) {
 			`${after} ms`
 		);
 		await unipeq3.close();
+
+		// Two sides on different minors: both fall back to the lower one, and the newer side
+		// leaves out what the older lacks.
+		const link = async (hostOptions, joinerOptions) => {
+			const mgt = await page();
+			const unipeq = await page();
+			const code = await mgt.evaluate(
+				([server, options]) => window.setupHost(server, options),
+				[server, hostOptions]
+			);
+			await unipeq.evaluate(
+				([server, code, options]) => window.setupJoiner(server, code, options),
+				[server, code, joinerOptions]
+			);
+			await waitFor('uniPEQ asks', unipeq, (s) => s.requests.length > 0);
+			await unipeq.evaluate(() => window.fake.link.approve());
+			await waitFor('mGT links', mgt, (s) => s.states.at(-1) === 'linked');
+			await waitFor('mGT has the hello', mgt, (s) => s.hello);
+			await waitFor('uniPEQ has the hello', unipeq, (s) => s.hello);
+			return [mgt, unipeq];
+		};
+		const minors = (p) =>
+			p.evaluate(() => ({ minor: window.fake.link.minor, peerProto: window.fake.link.peerProto }));
+		const settle = (ms = 500) => new Promise((r) => setTimeout(r, ms));
+
+		// mGT is the older one (1.2).
+		const [mgt4, unipeq4] = await link({ proto: [1, 2] });
+		const [m4, u4] = [await minors(mgt4), await minors(unipeq4)];
+		check(
+			'mixed minors, mGT older: both settle on 2 and know the other proto',
+			m4.minor === 2 && u4.minor === 2 && same(m4.peerProto, [1, 3]) && same(u4.peerProto, [1, 2]),
+			JSON.stringify([m4, u4])
+		);
+		let [ms4, us4] = [await state(mgt4), await state(unipeq4)];
+		check('mixed minors link rather than end', !ms4.ended && !us4.ended);
+
+		const refused = await mgt4.evaluate(() =>
+			window.fake.link.command('control', { id: 'gain', value: 1 })
+		);
+		await settle();
+		us4 = await state(unipeq4);
+		check(
+			'a 1.3 command to an older uniPEQ is unsupported, and not sent',
+			!refused.ok && refused.code === 'unsupported' && !us4.commands.includes('control'),
+			JSON.stringify({ refused, commands: us4.commands })
+		);
+
+		// A busy value 1.3 added reaches an older mGT as null: after a real one, so the change
+		// is seen.
+		for (const busy of ['preset', 'control']) {
+			await unipeq4.evaluate(() => window.fake.busy('write'));
+			await waitFor('mGT sees busy write', mgt4, (s) => s.status?.busy === 'write');
+			await unipeq4.evaluate((busy) => window.fake.busy(busy), busy);
+			ms4 = await waitFor(`mGT sees busy ${busy} as none`, mgt4, (s) => s.status?.busy === null);
+			check(
+				`busy '${busy}' reaches an older mGT as null`,
+				ms4?.status.busy === null,
+				JSON.stringify(ms4?.status.busy)
+			);
+		}
+
+		await mgt4.evaluate(() =>
+			window.fake.replaceAll({ filters: [pk(111), pk(222)], preamp: -2, autoPreamp: false })
+		);
+		us4 = await waitFor('older uniPEQ gets the list', unipeq4, (s) => s.eq.filters.length === 2);
+		check(
+			'replaceAll to an older uniPEQ sends the list and preamp, no channels op',
+			us4 &&
+				us4.ops.some((o) => o.op === 'list') &&
+				us4.ops.some((o) => o.op === 'preamp') &&
+				!us4.ops.some((o) => o.op === 'channels' || o.ch),
+			JSON.stringify(us4?.ops)
+		);
+		await Promise.all([mgt4.close(), unipeq4.close()]);
+
+		// uniPEQ is the older one (1.2).
+		const [mgt5, unipeq5] = await link({}, { proto: [1, 2] });
+		const [m5, u5] = [await minors(mgt5), await minors(unipeq5)];
+		check(
+			'mixed minors, uniPEQ older: both settle on 2 and know the other proto',
+			m5.minor === 2 && u5.minor === 2 && same(m5.peerProto, [1, 2]) && same(u5.peerProto, [1, 3]),
+			JSON.stringify([m5, u5])
+		);
+		const noEq = await mgt5.evaluate(() => window.fake.link.command('eq', { id: null }));
+		const write5 = await mgt5.evaluate(() => window.fake.link.command('write'));
+		await settle();
+		const us5 = await state(unipeq5);
+		check(
+			'a 1.3 command to an older uniPEQ is unsupported, and an older one still goes through',
+			!noEq.ok && noEq.code === 'unsupported' && write5.ok && same(us5.commands, ['write']),
+			JSON.stringify({ noEq, write5, commands: us5.commands })
+		);
+		await Promise.all([mgt5.close(), unipeq5.close()]);
+
+		// Channels apart, both on 1.3.
+		const apart = {
+			filters: [pk(1000, 1), pk(2000, 2)],
+			preamp: -4,
+			autoPreamp: false,
+			right: { filters: [pk(1100, -1), pk(2100, -2)], preamp: -5, autoPreamp: false }
+		};
+		const [mgt6, unipeq6] = await link({}, { eq: apart });
+		let [ms6, us6] = [await state(mgt6), await state(unipeq6)];
+		check(
+			"uniPEQ's channels apart reach mGT",
+			same(ms6.eq, apart) && same(us6.eq, apart),
+			JSON.stringify(ms6.eq)
+		);
+		const adoptedBefore = ms6.adopted.length;
+
+		// mGT edits the right channel only.
+		const right0 = { type: 'PK', freq: 1500, q: 2, gain: 5 };
+		await mgt6.evaluate(
+			(filter) => window.fake.edit([{ op: 'band', i: 0, ch: 'right', filter }], { settle: true }),
+			right0
+		);
+		us6 = await waitFor(
+			'uniPEQ applies the right band',
+			unipeq6,
+			(s) => s.eq.right.filters[0].freq === 1500
+		);
+		await settle();
+		ms6 = await state(mgt6);
+		check(
+			"mGT's right-channel edit changes uniPEQ's right and leaves the left",
+			us6 &&
+				same(us6.eq.right.filters[0], right0) &&
+				same(us6.eq.right.filters[1], apart.right.filters[1]) &&
+				same(us6.eq.filters, apart.filters) &&
+				us6.eq.right.preamp === apart.right.preamp,
+			JSON.stringify(us6?.eq)
+		);
+		check(
+			"uniPEQ's acknowledgement leaves mGT as it is",
+			same(ms6.eq, us6.eq) && ms6.adopted.length === adoptedBefore,
+			JSON.stringify({ mgt: ms6.eq, adopted: ms6.adopted.length })
+		);
+
+		// uniPEQ edits the right channel: mGT adopts it, the channels still apart.
+		await unipeq6.evaluate(() =>
+			window.fake.edit([
+				{ op: 'band', i: 1, ch: 'right', filter: { type: 'LSC', freq: 90, q: 1, gain: 2 } }
+			])
+		);
+		ms6 = await waitFor(
+			'mGT adopts the right band',
+			mgt6,
+			(s) => s.eq.right?.filters[1].type === 'LSC'
+		);
+		check(
+			"uniPEQ's right-channel edit is adopted by mGT, the left untouched",
+			ms6 && same(ms6.eq.filters, apart.filters) && ms6.adopted.length === adoptedBefore + 1,
+			JSON.stringify(ms6?.eq)
+		);
+
+		// A list without `right` joins the channels, and the link stays up.
+		const one = { filters: [pk(333), pk(444)], preamp: -1, autoPreamp: false };
+		await mgt6.evaluate((eq) => window.fake.replaceAll(eq), one);
+		us6 = await waitFor(
+			'uniPEQ joins the channels',
+			unipeq6,
+			(s) => !s.eq.right && s.eq.filters[0].freq === 333
+		);
+		await settle();
+		ms6 = await state(mgt6);
+		check(
+			'replaceAll without right joins the channels on uniPEQ',
+			us6 &&
+				same(us6.eq, one) &&
+				same(ms6.eq, one) &&
+				us6.ops.some((o) => o.op === 'channels' && o.apart === false),
+			JSON.stringify({ unipeq: us6?.eq, mgt: ms6.eq })
+		);
+		check(
+			'the session stays linked through it',
+			ms6.states.at(-1) === 'linked' && !ms6.ended && !us6?.ended,
+			JSON.stringify([ms6.states.at(-1), ms6.ended, us6?.ended])
+		);
+		await Promise.all([mgt6.close(), unipeq6.close()]);
 	} finally {
 		await browser.close();
 	}

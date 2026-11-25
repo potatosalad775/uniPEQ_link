@@ -4,11 +4,13 @@ How modernGraphTool (mGT) and uniPEQ link: pairing, the wire protocol, uniPEQ's 
 mGT's side. It builds on [phase-0.md](phase-0.md), whose seven design consequences are
 requirements here.
 
-**Status (2026-10-12):** step 1 (9) is done: `client/` is tagged `v1.0.0` on
-[GitHub](https://github.com/potatosalad775/uniPEQ_link), and the Worker is deployed at
-`link.unipeq.com` with the landing page, both packages' `assetlinks.json` (verified by Google's
-Digital Asset Links API) and the probe at `/probe/`. The smoke test passes against it, TURN relay
-included. Next: uniPEQ's native service (step 2).
+**Status (2026-11-25):** step 1 (9) is done: `client/` is tagged on
+[GitHub](https://github.com/potatosalad775/uniPEQ_link) (latest `v1.4.0`: protocol 1.3, which
+carries several EQs, the channels apart, device controls and the device's own preset list), and
+the Worker is deployed at `link.unipeq.com` with the landing page, both packages'
+`assetlinks.json` (verified by Google's Digital Asset Links API) and the probe at `/probe/`. The
+smoke test passes against it, TURN relay included. Next: uniPEQ's native service (step 2). The
+apps' glue for 1.3 isn't written in either app.
 
 ## In short
 
@@ -16,7 +18,8 @@ included. Next: uniPEQ's native service (step 2).
   through the "Open uniPEQ" intent link (same phone), a QR code that opens uniPEQ as an App Link,
   or the typed code. It opens the DataChannel first and then asks the user "Link with
   `<origin>`?". Nothing the link sends touches the device until the user approves.
-- **The band list is shared live, and uniPEQ owns it.** Both apps edit one list. uniPEQ holds the
+- **The band list is shared live, and uniPEQ owns it.** Both apps edit one list (two while a
+  device's channels are apart, 1.3). uniPEQ holds the
   authoritative copy, numbers every change (`rev`), and is the only side that writes the device:
   auto-write, fit check and review all run in uniPEQ. mGT edits optimistically and adopts what
   uniPEQ echoes back. When both edit at once, the change uniPEQ applies last wins.
@@ -48,7 +51,7 @@ protocol in this repo, every device kind counts, and mGT widening its filter typ
 | uniPEQ's editor while linked             | Two-way live sync of the band list                                    |
 | Who holds the list and writes the device | uniPEQ: authoritative copy, revisions, auto-write, fit, review        |
 | Which list wins at link start            | mGT asks when they differ; an empty mGT list takes uniPEQ's silently  |
-| mGT's per-band on/off and one-ear bands  | Unavailable while linked                                              |
+| mGT's per-band on/off and one-ear bands  | Unavailable while linked (1.3 can carry the ears apart: not built)    |
 | Undo                                     | Each side keeps its own history; a remote edit is one undo step       |
 | Cross-device pairing                     | Typed code, plus a QR code that opens uniPEQ as a verified App Link   |
 | Pairing secret                           | The room code is enough; uniPEQ's approval is the gate                |
@@ -140,7 +143,7 @@ works under any site's content security policy and stays out of mGT's boot bundl
   channel opens, uniPEQ keeps the answer and sends it when the channel opens.
 - **Approve** starts the link service (5.1) and sends `approval: approved`, then the full
   snapshot. **Don't link** sends `bye: denied`, and uniPEQ leaves the room.
-- Until it approves, uniPEQ answers only `hello`, `ping` and `bye`. Everything else gets
+- Until it approves, uniPEQ answers only `hello`, `ping`, `bye` and `away`. Everything else gets
   `approval: pending`.
 - An approval lasts for the session, which is keyed by mGT's peer id. A rejoin with the same peer
   id, including an mGT reload (4.6), doesn't ask again. A new peer id is a new session.
@@ -205,56 +208,100 @@ uniPEQ: idle → joining → awaiting approval (dialog) → linked ⇄ waiting f
 - Every message is one JSON text frame `{ "t": "<type>", ... }`, under 64 KiB, the same limit as
   the signaling relay. The largest message is `device`, which carries an eqcaps profile of a few
   KB.
-- Units are eqcaps': Hz, dB, RBJ Q, and type codes `PK LSC HSC LPQ HPQ BP NO AP`.
+- Units are eqcaps': Hz, dB, RBJ Q, and type codes `PK LSC HSC LPQ HPQ BP NO AP`. A device
+  control's value (`control`, `status.controls`) is in the device's own numbers, which its
+  `capabilities.controls` entry describes.
 - **Unknown message types and unknown fields are ignored**, so minor versions can add both.
 
 ### 4.2 Versioning
 
-Both `hello`s carry `proto: [major, minor]`, currently `[1, 2]`.
+Both `hello`s carry `proto: [major, minor]`, currently `[1, 3]`.
 
 - **1.1** adds `status.consent` and the `consent` command (the volume warning, 4.5).
 - **1.2** adds `launch` to uniPEQ's `hello` (the launch token, 2.4).
+- **1.3** carries what eqcaps 0.6.0 devices have: several EQs, two channels, their own controls
+  and a preset list they keep. Protocol 1.2 could carry none of that, and three things were
+  wrong outright: uniPEQ sent the static preset list, so a linked mGT showed stale names and ids;
+  a plan change couldn't name a channel; and with the channels apart, mGT edited whichever one
+  was on screen in uniPEQ without knowing. It adds `LinkEq.right`, the `ch` field and the
+  `channels` op on edits (4.3), `device.eq` and more keys in `capabilities`, `status.slots`,
+  `unsaved`, `absentEqs` and `controls`, the `control` and `preset` values of `busy`,
+  `PlanChange.channel` (4.5), and the commands `eq`, `control`, `preset-create`, `preset-rename`
+  and `preset-delete`.
 
 - **Different major:** both sides send `bye: version` with their own `proto` and close. The UI
   names the app to update: "uniPEQ is older than this site's link" or "Update modernGraphTool".
-- **Same major:** features from a higher minor are used only when both minors have them
-  (`min(minor)`). A command the other side doesn't know gets `re: { ok: false, code:
-'unsupported' }`.
+- **Same major:** features from a higher minor are used only when both minors have them. Each
+  side takes the peer's `proto` from its `hello` and works with `sharedMinor`, the smaller minor.
+  `HostLink` and `JoinerLink` hold it as `.minor` (0 before the peer's `hello`) and the peer's own
+  as `.peerProto`. `JoinerLink` emits `hello`, for uniPEQ's glue to read mGT's.
+  - **mGT** answers `re: { ok: false, code: 'unsupported' }` itself, without sending, for a
+    command above the session's minor (`COMMAND_MINOR`). An older uniPEQ gives the same answer
+    for a name it doesn't know.
+  - **uniPEQ** sends `status` through `statusFor`: a value that a later minor added to an existing
+    field falls back to what an older mGT shows for "none" (`busy: 'control' | 'preset'` becomes
+    null below 3). A new field needs nothing, since unknown fields are ignored. Its `eq` handler
+    reads `minor` too, so an mGT below 1.3 never gets `right` (4.3).
+  - **Both apps:** a field missing from an older peer's message says nothing about the device, so
+    check `minor` before reading "no controls" or "one EQ" from its absence. mGT sends `channels`
+    and `ch` only at minor 3 or more. `replaceOps` does that for a resync, and `HostLink.edit` takes
+    them out of the app's own edits below it: an older uniPEQ would apply a channel's op to its one
+    list.
 - The major goes up only when an existing message changes meaning. Additions bump the minor.
 
 ### 4.3 Messages
 
-| Type       | Direction    | Body                                                                                            | When                                    |
-| ---------- | ------------ | ----------------------------------------------------------------------------------------------- | --------------------------------------- |
-| `hello`    | both         | `proto`, `app` (`mgt`/`unipeq`), `version`, mGT: `site?`, `lastRev`, `dirty`; uniPEQ: `launch?` | First message on every channel open     |
-| `approval` | uniPEQ → mGT | `state`: `pending` / `approved`                                                                 | After `hello`; on approval              |
-| `bye`      | both         | `reason`: `unlink` / `denied` / `version` / `timeout` / `replaced`                              | Session ends                            |
-| `away`     | mGT → uniPEQ | —                                                                                               | `pagehide`                              |
-| `ping`     | mGT → uniPEQ | `n`                                                                                             | Every 5 s                               |
-| `pong`     | uniPEQ → mGT | `n`                                                                                             | From the `ping` handler                 |
-| `edit`     | mGT → uniPEQ | `seq`, `ops[]`, `burst?`, `settle?`                                                             | mGT's edits, at most every 50 ms        |
-| `eq`       | uniPEQ → mGT | `rev`, `eq`, `ack`, `by` (`mgt`/`unipeq`/`device`), `burst?`, `fresh?`                          | After every change, at most every 50 ms |
-| `device`   | uniPEQ → mGT | `null`, or `name`, `kind`, `profile`, `profileSource`, `profileId`, `identity`, `capabilities`  | On approval and on any device change    |
-| `status`   | uniPEQ → mGT | see 4.5                                                                                         | On any change                           |
-| `cmd`      | mGT → uniPEQ | `id`, `name`, `args?`                                                                           | Buttons in mGT                          |
-| `re`       | uniPEQ → mGT | `id`, `ok`, `code?`                                                                             | When the command finishes               |
-| `notice`   | uniPEQ → mGT | `kind: 'paused'`, `cause`, `ms`                                                                 | Self-check (5.3)                        |
+| Type       | Direction    | Body                                                                                                  | When                                    |
+| ---------- | ------------ | ----------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `hello`    | both         | `proto`, `app` (`mgt`/`unipeq`), `version`, mGT: `site?`, `lastRev`, `dirty`; uniPEQ: `launch?`       | First message on every channel open     |
+| `approval` | uniPEQ → mGT | `state`: `pending` / `approved`                                                                       | After `hello`; on approval              |
+| `bye`      | both         | `reason`: `unlink` / `denied` / `version` / `timeout` / `replaced`; `proto?` (with `version`)         | Session ends                            |
+| `away`     | mGT → uniPEQ | —                                                                                                     | `pagehide`                              |
+| `ping`     | mGT → uniPEQ | `n`                                                                                                   | Every 5 s                               |
+| `pong`     | uniPEQ → mGT | `n`                                                                                                   | From the `ping` handler                 |
+| `edit`     | mGT → uniPEQ | `seq`, `ops[]`, `burst?`, `settle?`                                                                   | mGT's edits, at most every 50 ms        |
+| `eq`       | uniPEQ → mGT | `rev`, `eq`, `ack`, `by` (`mgt`/`unipeq`/`device`), `burst?`, `fresh?`                                | After every change, at most every 50 ms |
+| `device`   | uniPEQ → mGT | `null`, or `name`, `kind`, `profile`, `profileSource`, `profileId`, `identity`, `capabilities`, `eq?` | On approval and on any device change    |
+| `status`   | uniPEQ → mGT | see 4.5                                                                                               | On any change                           |
+| `cmd`      | mGT → uniPEQ | `id`, `name`, `args?`                                                                                 | Buttons in mGT                          |
+| `re`       | uniPEQ → mGT | `id`, `ok`, `code?`                                                                                   | When the command finishes               |
+| `notice`   | uniPEQ → mGT | `kind: 'paused'`, `cause`, `ms`                                                                       | Self-check (5.3)                        |
 
 The shared list:
 
 ```ts
-interface LinkEq {
+type Channel = 'left' | 'right';
+
+interface LinkChannel {
 	filters: Filter[]; // eqcaps Filter: { type, freq, q, gain }, in band (slot) order
 	preamp: number; // the value in effect: derived while autoPreamp is on
 	autoPreamp: boolean;
 }
 
+interface LinkEq extends LinkChannel {
+	right?: LinkChannel; // 1.3: the channels are apart, and the fields above are the left's
+}
+
 type EditOp =
-	| { op: 'band'; i: number; filter: Filter } // replace band i
-	| { op: 'list'; filters: Filter[] } // replace the whole list
-	| { op: 'preamp'; db: number } // a fixed preamp; turns Auto off
-	| { op: 'auto-preamp'; on: boolean };
+	| { op: 'band'; i: number; filter: Filter; ch?: Channel } // replace band i
+	| { op: 'list'; filters: Filter[]; ch?: Channel } // replace the whole list
+	| { op: 'preamp'; db: number; ch?: Channel } // a fixed preamp; turns Auto off
+	| { op: 'auto-preamp'; on: boolean; ch?: Channel }
+	| { op: 'channels'; apart: boolean; keep?: Channel }; // 1.3
 ```
+
+- **`right`** is there while the channels are apart. The top-level fields are then the left
+  channel's, as in eqcaps' `PullResult`. Without it, one list drives both. An mGT below 1.3 never
+  gets `right`: uniPEQ gives it the one list its edits land on.
+- **`ch`** (1.3): an op without it sets both channels, apart or not. With it, the op sets that
+  channel and is dropped while the channels aren't apart, because the EQ changed shape under it.
+  An op whose `ch` is neither value isn't kept, since it would land on both.
+- **`channels`** (1.3): `apart: true` sets the channels apart, the right starting as a copy of the
+  left. uniPEQ refuses it for a device that can't drive them apart (`capabilities.perChannel`).
+  `apart: false` makes `keep`'s list (default left) both channels'. Either is a no-op when the
+  channels are that way already.
+- **`eqEqual`** compares `right` too. Apart with equal channels isn't one list for both, because
+  joining them is an edit of its own.
 
 Examples:
 
@@ -265,6 +312,13 @@ Examples:
 { "t": "edit", "seq": 42, "burst": "g17", "settle": true, "ops": [] }
 { "t": "eq", "rev": 108, "ack": 42, "by": "mgt", "burst": "g17",
 	"eq": { "filters": [], "preamp": -3.2, "autoPreamp": true } }
+{ "t": "edit", "seq": 43, "burst": "g18", "ops": [
+	{ "op": "band", "i": 0, "ch": "right", "filter": { "type": "PK", "freq": 800, "q": 1, "gain": 2 } }
+] }
+{ "t": "eq", "rev": 109, "ack": 43, "by": "mgt", "burst": "g18",
+	"eq": { "filters": [], "preamp": -3.2, "autoPreamp": true,
+		"right": { "filters": [{ "type": "PK", "freq": 800, "q": 1, "gain": 2 }],
+			"preamp": -3.2, "autoPreamp": true } } }
 { "t": "cmd", "id": 7, "name": "switch", "args": { "value": "p2" } }
 { "t": "re", "id": 7, "ok": true }
 ```
@@ -273,10 +327,13 @@ Examples:
 
 **uniPEQ** (authority):
 
-1. Applies each `edit`'s ops in order to its current list, through `eqStore`. A `band` op is
-   projected onto its slot (`editFilter`), exactly as a local edit is. A `band` op past the end
-   of the list is dropped, because the list changed shape under it. Ops apply only while
-   `editable` (4.5); otherwise uniPEQ just answers with `eq`, which puts mGT back.
+1. Applies each `edit`'s ops in order to its current list, through `eqStore`. `applyOps` is the
+   reference for what each op does. A `band` op is projected onto its slot (`editFilter`),
+   exactly as a local edit is. A `band` op past the end of the list is dropped, because the list
+   changed shape under it. An op with `ch` is dropped while the channels aren't apart, and one
+   without it sets both. `channels` is refused for a device that can't drive them apart, and an
+   op this side doesn't know is skipped. Ops apply only while `editable` (4.5); otherwise uniPEQ
+   just answers with `eq`, which puts mGT back.
 2. Records them as one undo step per `burst` (coalesce key `link:<burst>`).
 3. Bumps `rev` and broadcasts `eq` with `ack` = the last mGT `seq` applied. Broadcasts are
    throttled to one per 50 ms, always the latest state, and always one after the last change.
@@ -288,15 +345,19 @@ Examples:
 
 **mGT** (optimistic):
 
-1. Applies its own edits locally at once and sends them with `seq + 1`. Within a 50 ms window it
-   merges `band` ops on the same index and keeps the latest. A `list` op replaces everything
-   pending. Gestures (a drag, a slider, a held key) share a `burst` id and end with `settle`.
-   AutoEQ, a loaded preset, add or remove, undo and redo send one `list` op with `settle`.
-   Keyboard nudges settle after 700 ms idle, which is mGT's current auto-write delay.
+1. Applies its own edits locally at once and sends them with `seq + 1`. Within a 50 ms window an
+   op supersedes the pending ops of its kind for the same channel, or for every channel when it
+   names none: a `band` the `band` on the same index, a `list` the `list` and the bands, a
+   `preamp` the preamp ops of both kinds, an `auto-preamp` only the `auto-preamp` (the fixed value
+   before it is the one in effect once Auto is off again). Nothing at or before the last pending
+   `channels` op is dropped, because joining or splitting changes what the ops before it did.
+   Gestures (a drag, a slider, a held key) share a `burst` id and end with `settle`. AutoEQ, a
+   loaded preset, add or remove, undo and redo send one `list` op with `settle`. Keyboard nudges
+   settle after 700 ms idle, which is mGT's current auto-write delay.
 2. On `eq` with `ack` below its last sent `seq`: an edit of its own is still in flight and will
    overwrite this, so mGT only records `rev`.
-3. On `eq` with `ack` equal to its last `seq`: adopts `eq` if it differs from the local list. That
-   covers uniPEQ's edits and uniPEQ's slot projection. A remote change is one undo step,
+3. On `eq` with `ack` equal to its last `seq`: adopts `eq` if it differs from the local list
+   (`eqEqual`, `right` included). That covers uniPEQ's edits and uniPEQ's slot projection. A remote change is one undo step,
    coalesced by `burst`. A `fresh` one is an undo barrier in mGT too, since undoing past it would
    hand the device another device's or preset's bands (uniPEQ's rule 3).
 
@@ -311,9 +372,15 @@ is what AutoEQ or loading a preset means.
 
 - `kind`: `hid`, `serial`, `ble` or `demo`.
 - `profileSource`: `device`, `group`, `guess` or `demo`.
-- `profile`: the full eqcaps profile, so mGT fits, flags and bounds AutoEQ with exactly
-  uniPEQ's profile, whatever eqcaps versions the two apps ship.
-- `capabilities`: mGT's `PeqCapabilities` subset, including `slots`.
+- `profile`: the full eqcaps profile of the EQ the device is viewed as (`eq`; eqcaps'
+  `eqProfile`), so mGT fits, flags and bounds AutoEQ with exactly uniPEQ's profile, whatever
+  eqcaps versions the two apps ship.
+- `capabilities`: opaque on the wire. It holds mGT's `PeqCapabilities` subset, including `slots`,
+  which for a device that keeps a preset list is the room it has: the list itself is
+  `status.slots`. From 1.3 it also holds eqcaps' `controls`, `eqs`, `perChannel`, `listsSlots`,
+  `editsSlots` and `readsBandCount`, where a missing key reads as "can't".
+- `eq` (1.3): the id of the EQ the device is viewed as, among `capabilities.eqs`. Null is its own.
+  The `eq` command changes it.
 
 Demo, guessed and experimental devices all link.
 
@@ -325,10 +392,10 @@ interface LinkStatus {
 	connected: boolean;
 	knownDevice: string | null; // still named after a disconnect
 	editable: boolean; // uniPEQ's canEdit: connected and not waiting to reconnect
-	activeSlot: number | null;
-	deviceSlot: number | null;
+	activeSlot: number | null; // an id in status.slots, else in capabilities.slots
+	deviceSlot: number | null; // null when the device can't say, and while unsaved
 	eqEnabled: boolean | null;
-	busy: 'read' | 'write' | 'switch' | 'connect' | null;
+	busy: 'read' | 'write' | 'switch' | 'connect' | 'control' | 'preset' | null; // last two: 1.3
 	inSync: boolean | null;
 	unwritten: boolean;
 	needsReconnect: boolean;
@@ -336,31 +403,68 @@ interface LinkStatus {
 	failure: { op: string; code: string } | null; // eqcaps BridgeError code
 	review: { rev: number; changes: PlanChange[]; clipRisk: boolean; infeasible: boolean } | null;
 	consent?: boolean; // 1.1: the volume warning is up, and nothing is written until it's answered
+	slots?: LinkSlot[]; // 1.3: the device's own preset list, as it is now
+	unsaved?: boolean; // 1.3: the device is on no preset
+	absentEqs?: string[]; // 1.3: ids from capabilities.eqs that the device's mode lacks now
+	controls?: Record<string, number | null>; // 1.3: by id; null: the device lacks it now
+}
+
+interface LinkSlot {
+	id: number; // the device's own number
+	name: string;
+	bypass?: boolean;
+	writable?: boolean;
 }
 ```
 
+- **`slots`** is there for a device that keeps a list (`capabilities.listsSlots`), under the
+  device's own names, and replaces the static `capabilities.slots` for it. Ids and names change
+  when a preset is added, renamed or deleted, so mGT shows this list, not a copy it made earlier.
+- **`unsaved`**: the device's EQ changed since a preset was loaded, so it is on none.
+- **`controls`**: each of `capabilities.controls` by id. A value is null when the device lacks
+  that control now: its firmware, its mode or another control's value says so.
+- **`absentEqs`**: ids from `capabilities.eqs` that the device's mode lacks now. When the EQ the
+  device is viewed as becomes one of them, uniPEQ goes back to the device's own EQ, as it does
+  without a link: a new `device` with `eq: null`, and a `fresh` list.
+
 Commands (`cmd.name`):
 
-| Command      | Args                           | uniPEQ does                                                                    |
-| ------------ | ------------------------------ | ------------------------------------------------------------------------------ |
-| `read`       | —                              | Reads the target preset into the list (an undo step), as its Read button does  |
-| `write`      | —                              | Plans a write; writes it, or sets `status.review`                              |
-| `review`     | `rev`, `accept`                | Answers the review. If `rev` moved since the plan, re-plans instead of writing |
-| `switch`     | `value` (`p<id>`, `on`, `off`) | Device EQ, as `switchTo`, including its read of the new preset                 |
-| `fit`        | —                              | `fitFilters` (an edit, so it syncs)                                            |
-| `reconnect`  | —                              | Reconnects a `disconnectOnSave` device or a dropped one                        |
-| `auto-write` | `on`                           | Sets uniPEQ's auto-write setting (one setting, kept in one place)              |
-| `consent`    | `accept`, `quiet?`             | 1.1. Answers the volume warning; `quiet` turns it off for later connections    |
+| Command         | Args                           | uniPEQ does                                                                    |
+| --------------- | ------------------------------ | ------------------------------------------------------------------------------ |
+| `read`          | —                              | Reads the target preset into the list (an undo step), as its Read button does  |
+| `write`         | —                              | Plans a write; writes it, or sets `status.review`                              |
+| `review`        | `rev`, `accept`                | Answers the review. If `rev` moved since the plan, re-plans instead of writing |
+| `switch`        | `value` (`p<id>`, `on`, `off`) | Device EQ, as `switchTo`, including its read of the new preset                 |
+| `fit`           | —                              | `fitFilters` (an edit, so it syncs)                                            |
+| `reconnect`     | —                              | Reconnects a `disconnectOnSave` device or a dropped one                        |
+| `auto-write`    | `on`                           | Sets uniPEQ's auto-write setting (one setting, kept in one place)              |
+| `consent`       | `accept`, `quiet?`             | 1.1. Answers the volume warning; `quiet` turns it off for later connections    |
+| `eq`            | `id` (string or null)          | 1.3. Views the device as another of `capabilities.eqs`, and reads it           |
+| `control`       | `id`, `value`                  | 1.3. Writes one of `capabilities.controls`, in the device's own numbers        |
+| `preset-create` | `name?`                        | 1.3. Adds an empty preset after the last                                       |
+| `preset-rename` | `slot`, `name`                 | 1.3. Renames a preset                                                          |
+| `preset-delete` | `slot`                         | 1.3. Deletes a preset                                                          |
 
 - A command that touches the device holds a short wake lock (5.2) and answers `re` when it's done.
   Its effects arrive as `eq`, `status` and `device`, not in `re`.
+- `switch`'s `<id>` is an id from `status.slots`, else from `capabilities.slots`.
+- **`eq`** brings a new `device` (its `profile` is the new EQ's) and a `fresh` list.
+- **`control`**: the value arrives in `status.controls`. A control that makes the device reconnect
+  sets `needsReconnect`.
+- **The preset commands** are for a device with `capabilities.editsSlots`, and the list comes back
+  in `status.slots`. `preset-rename` is refused with `invalid-request` when the device can't store
+  `name`, rather than shortened. `preset-delete` moves the later presets down by one, so every id
+  mGT holds is stale until the next `status`: mGT offers no preset switch while `busy` is `preset`,
+  and takes its ids from the `status` after it.
 - **The volume warning.** A write can pop, drop out or jump in level mid-playback, so uniPEQ asks
   the user to pause or lower the volume once per connection, before its first write (auto-write
   on connecting, else the first Write or preset switch). While it waits, `status.consent` is true
   and nothing is written. mGT shows the same warning, and either side's answer closes both. A 1.0
   mGT doesn't know it: the warning shows in uniPEQ only, and the user answers there.
 - A review shows on both sides, and either side's answer closes both dialogs. `PlanChange` has the
-  same shape in both apps; uniPEQ's `push-plan.ts` is a copy of mGT's.
+  same shape in both apps; uniPEQ's `push-plan.ts` is a copy of mGT's. From 1.3 a change can carry
+  `channel`: the one it is in, on a write that sends the channels apart. Without it, the change is
+  in both.
 
 ### 4.6 Resync
 
@@ -372,10 +476,13 @@ mGT keeps `lastRev`, the last `eq` it adopted, and `dirty`, meaning it has edits
 acknowledged. On the new `eq`:
 
 - If `dirty` and `eq.rev == lastRev`, nothing changed in uniPEQ meanwhile, so mGT sends its
-  current list as one `list` op with `settle`.
+  current list whole, with `settle` (`replaceOps`). From minor 3 that starts with a `channels` op,
+  so the result is exactly mGT's EQ, apart or not. Below 3 it is the list and the preamp.
 - Otherwise mGT adopts uniPEQ's list. If both changed while apart, uniPEQ's change wins.
+- That covers a device that drives its channels apart where the last one didn't, or the reverse:
+  uniPEQ's list, with or without `right`, is the one adopted. It needs no rule of its own.
 
-**An mGT reload resumes the session.** mGT keeps `{ server, room, peerId }` in `sessionStorage`,
+**An mGT reload resumes the session.** mGT keeps `{ server, room, peerId, launch }` in `sessionStorage`,
 which survives a reload in the same tab. The page rejoins with the same peer id, so the Worker
 replaces the old socket without `peer-left`. uniPEQ keeps the approval, and mGT, whose
 `RTCPeerConnection` is gone, sends `fresh`, following the probe's rejoin rules. mGT's list after a
@@ -541,6 +648,9 @@ panel, because panels unmount on every switch.
   - `currentSlot` comes from `status`.
   - `close` unlinks.
   - `push` isn't used, because uniPEQ writes from the shared list.
+- Since 1.3 the wire also carries several EQs (`device.eq`), the device's controls
+  (`status.controls`) and its own preset list (`status.slots`), with the commands that change
+  them (4.5). mGT's side of them isn't built: `LinkDevice` and the panels don't use them yet.
 - `devicePeqService` branches on `connectionType === 'link'`:
   - Write sends `cmd: write`.
   - Mirrored `status.review` opens `DevicePeqPushDialog` from uniPEQ's plan, and its answer sends
@@ -558,18 +668,24 @@ panel, because panels unmount on every switch.
   response as fixed. A linked list may hold `HPQ` or `LPQ` bands from the device, and AutoEQ must
   not drop them.
 - **The preamp is uniPEQ's.** `eq.preamp` is the value uniPEQ writes (Auto's moved down onto the
-  device's grid), and mGT shows and plays exactly that while linked. Both derive Auto the same way
+  device's grid), and mGT shows and plays exactly that while linked (the left's, with the channels
+  apart; the right's is `right.preamp`). Both derive Auto the same way
   (no make-up gain for a cut-only list, the peak rounded up to 0.1 dB), so an optimistic edit
   shows the right value before the echo. A fixed preamp (a device's own, read in uniPEQ) is shown
   as fixed; mGT turns Auto back on with the `auto-preamp` op. mGT's band edits carry no preamp.
 - **The shared list is the list.** While linked:
-  - mGT's channel scope is fixed to both ears, and per-band on/off is hidden.
+  - mGT's channel scope is fixed to both ears, and per-band on/off is hidden. The wire can carry
+    the channels apart since 1.3 (4.3), but mGT's side of that isn't built, so this holds until
+    it is.
+  - Once it is: an edit with the scope on both ears goes without `ch`, so both channels get it,
+    apart or not. That includes AutoEQ and "Send this EQ to uniPEQ". Only an edit with the scope on
+    one ear names it.
   - Editing follows `status.editable`.
   - AutoEQ's band budget is the profile's band count minus the bands it keeps.
 - **Link start, when the lists differ:** if mGT's list is empty, it takes uniPEQ's silently.
   Otherwise mGT asks once: **Use uniPEQ's EQ** or **Send this EQ to uniPEQ**.
   - Sending turns disabled bands into 0 dB bands and drops one-ear bands. The dialog says how many
-    of each.
+    of each. (Until mGT sends the channels apart, which the wire allows since 1.3.)
   - The choice is one undo step on both sides.
   - While the dialog is open, mGT doesn't join the shared list. It keeps only the latest `eq`.
   - The same question comes back if a device first connects in uniPEQ during a link.
@@ -605,7 +721,7 @@ These rules are in the reference client, so mGT gets them by installing it (4.7)
   certificate's SHA-256. Served as a static asset.
 - **The room code alphabet** lives in `client/protocol.ts`, which the Worker and the smoke test
   import, and in the Phase 0 probe (`public/probe/probe.js`, `public/probe/index.html`), which
-  stays import-free.
+  stays import-free, and in `scripts/android-link-probe.mjs`.
 - **The custom domain:** `wrangler.jsonc` gets
   `"routes": [{ "pattern": "link.unipeq.com", "custom_domain": true }]`. The `unipeq.com` zone
   is already on Cloudflare, so Wrangler creates the DNS record and certificate on deploy.
@@ -615,8 +731,10 @@ These rules are in the reference client, so mGT gets them by installing it (4.7)
 
 ```
 client/          Framework-free TypeScript, no dependencies: installed by mGT and uniPEQ
-  protocol.ts    Message types and guards, PROTO, ROOM_ALPHABET, code normalization, links,
-                 timings. No DOM: the Worker imports it too
+  index.ts       The package's entry (`peq-link/client`): re-exports the files below
+  protocol.ts    Message types and guards, PROTO and `sharedMinor`, `COMMAND_MINOR`, `statusFor`,
+                 ROOM_ALPHABET, code normalization, links, timings. No DOM: the Worker imports it
+                 too
   session.ts     Signaling + RTCPeerConnection + DataChannel: the probe's rejoin, fresh and
                  reconnect-on-visible rules, as a typed event emitter
   sync.ts        The shared-list rules: seq/ack/rev, op merging and throttling, resync (4.4, 4.6)
@@ -626,7 +744,7 @@ client/          Framework-free TypeScript, no dependencies: installed by mGT an
 ```
 
 `host.ts` and `joiner.ts` hold the rules both apps must get identical (the handshake, version
-check, approval gating, `bye`, `away`, command timeouts), so the apps' glue only binds stores and
+check and negotiated minor, approval gating, `bye`, `away`, command timeouts), so the apps' glue only binds stores and
 UI to their events and handlers.
 
 **Both apps install it as a git dependency**, the npm counterpart of a pub git dependency:

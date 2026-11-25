@@ -13,6 +13,8 @@ import {
 	COMMANDS,
 	PROTO,
 	TIMINGS,
+	sharedMinor,
+	statusFor,
 	type ByeReason,
 	type CommandArgs,
 	type CommandName,
@@ -21,6 +23,7 @@ import {
 	type LinkEq,
 	type LinkStatus,
 	type Message,
+	type MessageOf,
 	type PauseCause,
 	type Proto,
 	type Timings
@@ -47,17 +50,26 @@ export interface JoinerEvents {
 	state: JoinerState;
 	/** Show (or update) "Link with <host>?". Again with `site` once mGT's `hello` arrives. */
 	request: ApprovalRequest;
+	/** mGT's `hello`, on every channel open: its app version and proto. `minor` is set by then. */
+	hello: MessageOf<'hello'>;
 	ended: Ended;
 }
 
 export interface JoinerHandlers {
+	/**
+	 * With the channels apart, both (`right`) when `minor` is 3 or more. An older mGT has one list:
+	 * give it the one its edits land on, without `right`.
+	 */
 	eq(): LinkEq;
 	device(): LinkDevice | null;
+	/** `busy` values an older mGT lacks are taken out on the way (`statusFor`). */
 	status(): LinkStatus;
 	/**
 	 * mGT's ops, to apply through the EQ store as one undo step per `burst` (coalesce key
 	 * `link:<burst>`). Returns whether the list changed; while uniPEQ can't edit, apply nothing and
 	 * return false. On `settle`, write now if auto-write is on, in this call (design §4.4).
+	 * `applyOps` is the reference for what each op does, `ch` and `channels` included; an op this
+	 * side doesn't know is skipped.
 	 */
 	edit(ops: EditOp[], meta: { burst?: string; settle: boolean }): boolean;
 	/** Holds a wake lock while it touches the device (design §5.2). */
@@ -96,6 +108,7 @@ export class JoinerLink extends Emitter<JoinerEvents> {
 	private current: JoinerState = 'joining';
 	private host: Peer | null = null;
 	private site: string | undefined;
+	private theirs: Proto | null = null;
 	/** The mGT peer id the user approved: the session's key, kept across rejoins and reloads. */
 	private approvedId: string | null = null;
 	private denied = false;
@@ -128,6 +141,19 @@ export class JoinerLink extends Emitter<JoinerEvents> {
 
 	get state(): JoinerState {
 		return this.current;
+	}
+
+	/** mGT's `proto`, once its `hello` arrived. */
+	get peerProto(): Proto | null {
+		return this.theirs;
+	}
+
+	/**
+	 * The minor both sides have (design §4.2), 0 before mGT's `hello`: what `eq`, `device` and
+	 * `status` may carry that a later minor added to an existing field.
+	 */
+	get minor(): number {
+		return this.theirs ? sharedMinor(this.proto, this.theirs) : 0;
 	}
 
 	get approved(): boolean {
@@ -168,7 +194,9 @@ export class JoinerLink extends Emitter<JoinerEvents> {
 	}
 
 	sendStatus(): void {
-		if (this.approved) this.session.send({ t: 'status', status: this.options.handlers.status() });
+		if (!this.approved) return;
+		const status = statusFor(this.options.handlers.status(), this.minor);
+		this.session.send({ t: 'status', status });
 	}
 
 	/** The self-check saw a pause (design §5.3). */
@@ -188,6 +216,7 @@ export class JoinerLink extends Emitter<JoinerEvents> {
 		if (!isNew || this.current === 'ended') return;
 		// A new peer id is a new session: a new tab, or mGT's storage gone. Ask again.
 		this.site = undefined;
+		this.theirs = null;
 		if (this.approvedId !== null) {
 			this.grace?.stop();
 			this.grace = null;
@@ -224,6 +253,8 @@ export class JoinerLink extends Emitter<JoinerEvents> {
 					this.end('version', 'self', message.proto);
 					return;
 				}
+				this.theirs = message.proto;
+				this.emit('hello', message);
 				if (message.site !== this.site) {
 					this.site = message.site;
 					if (!this.approved) this.emit('request', this.request());
