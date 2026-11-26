@@ -5,11 +5,13 @@ app: `../modernGraphTool`) with **uniPEQ** (Capacitor app, web and Android: `../
 WebRTC DataChannel; this repo's Cloudflare Worker only introduces them. The link is a one-time
 session, like a call: when it ends, both sides forget it.
 
-**Status (2026-11-25): building.** This repo's part is done: `client/` is tagged (latest `v1.5.0`: protocol 1.4, several
-EQs by name, channels apart, device controls and presets), and the Worker is deployed at `link.unipeq.com`. Next are uniPEQ's
-native service and the apps' glue, 1.3's and 1.4's included (design §9). The platform checks on a real phone,
-their answers and the design rules they lead to are in [docs/phase-0.md](docs/phase-0.md). Pairing,
-the wire protocol, uniPEQ's link service and mGT's side are in [docs/design.md](docs/design.md).
+**Status (2026-11-26): building.** This repo's part is done: `client/` is tagged (latest
+`v1.5.0`: protocol 1.4, several EQs by name, channels apart, device controls and presets), and the
+Worker is deployed at `link.unipeq.com`. mGT's glue for 1.3 and 1.4 is merged. Next are uniPEQ's
+native service and its glue, 1.3's and 1.4's included (design §9). The platform checks on a real
+phone, their answers and the design rules they lead to are in [docs/phase-0.md](docs/phase-0.md).
+Pairing, the wire protocol, uniPEQ's link service and mGT's side are in
+[docs/design.md](docs/design.md).
 
 ## Layout
 

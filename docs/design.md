@@ -4,13 +4,14 @@ How modernGraphTool (mGT) and uniPEQ link: pairing, the wire protocol, uniPEQ's 
 mGT's side. It builds on [phase-0.md](phase-0.md), whose seven design consequences are
 requirements here.
 
-**Status (2026-11-25):** step 1 (9) is done: `client/` is tagged on
+**Status (2026-11-26):** step 1 (9) is done: `client/` is tagged on
 [GitHub](https://github.com/potatosalad775/uniPEQ_link) (latest `v1.5.0`: protocol 1.4, which
 carries several EQs by name, the channels apart, device controls and the device's own preset
 list), and the Worker is deployed at `link.unipeq.com` with the landing page, both packages'
 `assetlinks.json` (verified by Google's Digital Asset Links API) and the probe at `/probe/`. The
-smoke test passes against it, TURN relay included. Next: uniPEQ's native service (step 2). The
-apps' glue for 1.3 and 1.4 isn't written in either app.
+smoke test passes against it, TURN relay included. Next: uniPEQ's native service (step 2). mGT's
+glue for 1.3 and 1.4 is merged (modernGraphTool #138, #139); uniPEQ's is on its `feat/link-1.3`
+branch.
 
 ## In short
 
@@ -51,7 +52,7 @@ protocol in this repo, every device kind counts, and mGT widening its filter typ
 | uniPEQ's editor while linked             | Two-way live sync of the band list                                    |
 | Who holds the list and writes the device | uniPEQ: authoritative copy, revisions, auto-write, fit, review        |
 | Which list wins at link start            | mGT asks when they differ; an empty mGT list takes uniPEQ's silently  |
-| mGT's per-band on/off and one-ear bands  | Unavailable while linked (1.3 can carry the ears apart: not built)    |
+| mGT's per-band on/off and one-ear bands  | No on/off while linked; one-ear bands only with `perChannel` (1.3)    |
 | Undo                                     | Each side keeps its own history; a remote edit is one undo step       |
 | Cross-device pairing                     | Typed code, plus a QR code that opens uniPEQ as a verified App Link   |
 | Pairing secret                           | The room code is enough; uniPEQ's approval is the gate                |
@@ -655,15 +656,26 @@ panel, because panels unmount on every switch.
 - mGT's `ProfileSource` gains `demo` and `ConnectionType` gains `link`.
 - With no device in uniPEQ, there's no connection. The accordion says "Linked. No device in
   uniPEQ".
-- `device-peq/link.ts`, next to `network.ts`, provides `LinkDevice implements PeqDevice`:
+- `device-peq/link.ts`, next to `network.ts`, provides `LinkPeqDevice implements PeqDevice`:
   - `pull` sends the `read` command.
   - `setEnabled` sends `switch`.
   - `currentSlot` comes from `status`.
   - `close` unlinks.
   - `push` isn't used, because uniPEQ writes from the shared list.
-- Since 1.3 the wire also carries several EQs (`device.eq`), the device's controls
-  (`status.controls`) and its own preset list (`status.slots`), with the commands that change
-  them (4.5). mGT's side of them isn't built: `LinkDevice` and the panels don't use them yet.
+- Since 1.3 the wire also carries the device's own preset list, its controls and its EQs (4.5).
+  Hardware EQ shows them as it does for USB, and `LinkPeqDevice` sends their commands:
+  - **Presets:** `status.slots` is the list. New, Rename and Delete send `preset-create`,
+    `preset-rename` and `preset-delete`.
+  - **Controls:** `capabilities.controls` and `status.controls` fill the settings rows. A change
+    sends one `control` command.
+  - **EQs:** `device.eq`, `device.eqs` (1.4) and `status.absentEqs` fill the EQ picker, and a pick
+    sends `eq`. When uniPEQ refuses it with `unwritten`, the panel says to write or read first.
+    Without `device.eqs` there's no picker: `capabilities.eqs` holds bare ids, and the viewed EQ's
+    profile would name the wrong EQs.
+  - Every value comes from `status` or `device`. mGT never reads the device, and never works out
+    its state from a command's answer, because `re` and `status` arrive in either order.
+  - `status.unsaved` and `switch unsaved` aren't used: Hardware EQ has no counterpart for the EQ on
+    no preset.
 - `devicePeqService` branches on `connectionType === 'link'`:
   - Write sends `cmd: write`.
   - Mirrored `status.review` opens `DevicePeqPushDialog` from uniPEQ's plan, and its answer sends
@@ -672,6 +684,10 @@ panel, because panels unmount on every switch.
     with the `auto-write` command.
   - `devicePeqStore`'s flags (`isWriting`, `autoPaused`, `needsReconnect`, …) are set from
     `status`, so `panelStatus` picks the line as usual.
+  - Only the link service sets the busy flags. Each is on while `status.busy` names it, or while
+    mGT's own command of that kind awaits its `re`. uniPEQ reports `busy: null` partway through
+    some commands (an `eq` that first writes, a create then a rename), so a second press could
+    reach it and be refused as `busy`.
   - Errors use the same `describeDeviceError` codes.
 
 ### 6.3 Editing while linked
@@ -681,24 +697,29 @@ panel, because panels unmount on every switch.
   response as fixed. A linked list may hold `HPQ` or `LPQ` bands from the device, and AutoEQ must
   not drop them.
 - **The preamp is uniPEQ's.** `eq.preamp` is the value uniPEQ writes (Auto's moved down onto the
-  device's grid), and mGT shows and plays exactly that while linked (the left's, with the channels
-  apart; the right's is `right.preamp`). Both derive Auto the same way
-  (no make-up gain for a cut-only list, the peak rounded up to 0.1 dB), so an optimistic edit
-  shows the right value before the echo. A fixed preamp (a device's own, read in uniPEQ) is shown
-  as fixed; mGT turns Auto back on with the `auto-preamp` op. mGT's band edits carry no preamp.
+  device's grid), and mGT shows and plays exactly that while linked. With the channels apart it
+  plays the lower of `preamp` and `right.preamp` (Auto only if both are): mGT applies one preamp
+  ahead of the per-ear split, and the lower one keeps the louder ear from clipping. Both derive
+  Auto the same way (no make-up gain for a cut-only list, the peak rounded up to 0.1 dB), so an
+  optimistic edit shows the right value before the echo. A fixed preamp (a device's own, read in
+  uniPEQ) is shown as fixed; mGT turns Auto back on with the `auto-preamp` op. mGT's band edits
+  carry no preamp.
 - **The shared list is the list.** While linked:
-  - mGT's channel scope is fixed to both ears, and per-band on/off is hidden. The wire can carry
-    the channels apart since 1.3 (4.3), but mGT's side of that isn't built, so this holds until
-    it is.
-  - Once it is: an edit with the scope on both ears goes without `ch`, so both channels get it,
-    apart or not. That includes AutoEQ and "Send this EQ to uniPEQ". Only an edit with the scope on
-    one ear names it.
+  - Per-band on/off is hidden, because uniPEQ's bands have none.
+  - mGT's channel scope is fixed to both ears unless the shared minor is 3 or more and the device
+    drives its channels apart (`capabilities.perChannel`).
+  - An edit with the scope on both ears goes without `ch`, so both channels get it, apart or not.
+    That includes AutoEQ and "Send this EQ to uniPEQ". Only an edit with the scope on one ear
+    names it.
+  - mGT's own edit sets uniPEQ's channels apart when it adds a one-ear band, and joins them when
+    it removes the last one, if uniPEQ's two lists differed before. Anything else, an adoption or a
+    resync included, keeps uniPEQ's mode: apart with both alike is uniPEQ's user's choice.
   - Editing follows `status.editable`.
   - AutoEQ's band budget is the profile's band count minus the bands it keeps.
 - **Link start, when the lists differ:** if mGT's list is empty, it takes uniPEQ's silently.
   Otherwise mGT asks once: **Use uniPEQ's EQ** or **Send this EQ to uniPEQ**.
-  - Sending turns disabled bands into 0 dB bands and drops one-ear bands. The dialog says how many
-    of each. (Until mGT sends the channels apart, which the wire allows since 1.3.)
+  - Sending turns disabled bands into 0 dB bands, and drops one-ear bands unless the scope rule
+    above allows them. The dialog says how many of each.
   - The choice is one undo step on both sides.
   - While the dialog is open, mGT doesn't join the shared list. It keeps only the latest `eq`.
   - The same question comes back if a device first connects in uniPEQ during a link.
