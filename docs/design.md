@@ -226,8 +226,8 @@ Both `hello`s carry `proto: [major, minor]`, currently `[1, 4]`.
   was on screen in uniPEQ without knowing. It adds `LinkEq.right`, the `ch` field and the
   `channels` op on edits (4.3), `device.eq` and more keys in `capabilities`, `status.slots`,
   `unsaved`, `absentEqs` and `controls`, the `control` and `preset` values of `busy`,
-  `PlanChange.channel` (4.5), and the commands `eq`, `control`, `preset-create`, `preset-rename`
-  and `preset-delete`.
+  `PlanChange.channel`, the `unsaved` value of `switch` (4.5), and the commands `eq`, `control`,
+  `preset-create`, `preset-rename` and `preset-delete`.
 - **1.4** adds `device.eqs`, the device's EQs by name (4.5). `profile` is the viewed EQ's alone,
   which has no list of EQs for any EQ but the device's own, and `capabilities.eqs` holds bare ids,
   so while uniPEQ viewed another EQ mGT couldn't name the rest.
@@ -436,25 +436,28 @@ interface LinkSlot {
 
 Commands (`cmd.name`):
 
-| Command         | Args                           | uniPEQ does                                                                    |
-| --------------- | ------------------------------ | ------------------------------------------------------------------------------ |
-| `read`          | —                              | Reads the target preset into the list (an undo step), as its Read button does  |
-| `write`         | —                              | Plans a write; writes it, or sets `status.review`                              |
-| `review`        | `rev`, `accept`                | Answers the review. If `rev` moved since the plan, re-plans instead of writing |
-| `switch`        | `value` (`p<id>`, `on`, `off`) | Device EQ, as `switchTo`, including its read of the new preset                 |
-| `fit`           | —                              | `fitFilters` (an edit, so it syncs)                                            |
-| `reconnect`     | —                              | Reconnects a `disconnectOnSave` device or a dropped one                        |
-| `auto-write`    | `on`                           | Sets uniPEQ's auto-write setting (one setting, kept in one place)              |
-| `consent`       | `accept`, `quiet?`             | 1.1. Answers the volume warning; `quiet` turns it off for later connections    |
-| `eq`            | `id` (string or null)          | 1.3. Views the device as another of `capabilities.eqs`, and reads it           |
-| `control`       | `id`, `value`                  | 1.3. Writes one of `capabilities.controls`, in the device's own numbers        |
-| `preset-create` | `name?`                        | 1.3. Adds an empty preset after the last                                       |
-| `preset-rename` | `slot`, `name`                 | 1.3. Renames a preset                                                          |
-| `preset-delete` | `slot`                         | 1.3. Deletes a preset                                                          |
+| Command         | Args                                      | uniPEQ does                                                                    |
+| --------------- | ----------------------------------------- | ------------------------------------------------------------------------------ |
+| `read`          | —                                         | Reads the target preset into the list (an undo step), as its Read button does  |
+| `write`         | —                                         | Plans a write; writes it, or sets `status.review`                              |
+| `review`        | `rev`, `accept`                           | Answers the review. If `rev` moved since the plan, re-plans instead of writing |
+| `switch`        | `value` (`p<id>`, `on`, `unsaved`, `off`) | Device EQ, as `switchTo`, including its read of the new preset                 |
+| `fit`           | —                                         | `fitFilters` (an edit, so it syncs)                                            |
+| `reconnect`     | —                                         | Reconnects a `disconnectOnSave` device or a dropped one                        |
+| `auto-write`    | `on`                                      | Sets uniPEQ's auto-write setting (one setting, kept in one place)              |
+| `consent`       | `accept`, `quiet?`                        | 1.1. Answers the volume warning; `quiet` turns it off for later connections    |
+| `eq`            | `id` (string or null)                     | 1.3. Views the device as another of `capabilities.eqs`, and reads it           |
+| `control`       | `id`, `value`                             | 1.3. Writes one of `capabilities.controls`, in the device's own numbers        |
+| `preset-create` | `name?`                                   | 1.3. Adds an empty preset after the last                                       |
+| `preset-rename` | `slot`, `name`                            | 1.3. Renames a preset                                                          |
+| `preset-delete` | `slot`                                    | 1.3. Deletes a preset                                                          |
 
 - A command that touches the device holds a short wake lock (5.2) and answers `re` when it's done.
   Its effects arrive as `eq`, `status` and `device`, not in `re`.
-- `switch`'s `<id>` is an id from `status.slots`, else from `capabilities.slots`.
+- `switch`'s `<id>` is an id from `status.slots`, else from `capabilities.slots`. `on` turns the
+  EQ on at the first preset, where the device has presets. **`unsaved`** (1.3) turns it on with
+  the EQ the device holds on no preset, so no preset is loaded over that edit. uniPEQ takes it only
+  while `status.unsaved` is true, as its own Device EQ offers it, and mGT sends it only then.
 - **`eq`** brings a new `device` (its `profile` is the new EQ's) and a `fresh` list. It is refused
   with `unwritten` while the list holds changes the device never got: they belong to the EQ being
   left, and uniPEQ's own dialog for that (write or discard) isn't one mGT can answer. mGT writes
